@@ -5,6 +5,7 @@ import { executeMemoryDecision, type DecisionSummary } from "../llm/decision";
 import { MemoryLayer, getTableForMemoryLayer } from "./layers";
 import { ensureTable } from "../db/schema";
 import { getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, DEFAULT_EMBED_DIMENSIONS } from "../config";
+import { startTracker, clearTracker } from "../tracker";
 
 export type AddMemoryResult = {
     attitudes: DecisionSummary;
@@ -14,6 +15,7 @@ export type AddMemoryResult = {
     totalAdded: number;
     totalUpdated: number;
     totalDeleted: number;
+    trackLog?: string;
 };
 
 /**
@@ -38,60 +40,75 @@ export async function addMemory(
 
     const dims = cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
 
-    // Ensure all memory tables exist
-    for (const layer of Object.values(MemoryLayer)) {
-        await ensureTable(dbPath, getTableForMemoryLayer(layer), dims);
+    const tracker = startTracker("记忆添加");
+
+    try {
+        // Ensure all memory tables exist
+        await tracker.track("初始化表", async () => {
+            for (const layer of Object.values(MemoryLayer)) {
+                await ensureTable(dbPath, getTableForMemoryLayer(layer), dims);
+            }
+        });
+
+        // Step 1: Extract memories from text
+        const extraction = await tracker.track("LLM记忆提取", () =>
+            extractMemories(inputText, llmCfg),
+            `输入长度: ${inputText.length}字符`,
+        );
+
+        // Step 2 & 3: Decision + CRUD for each layer
+        const attitudesFacts = extraction.attitudes.map((a) => ({
+            content: a.content,
+            extraFields: { subject: a.subject, attitude: a.attitude },
+        }));
+        const factsFacts = extraction.facts.map((f) => ({
+            content: f.content,
+            extraFields: { subject: f.subject, definition: f.definition },
+        }));
+        const knowledgeFacts = extraction.knowledge.map((k) => ({
+            content: k.content,
+            extraFields: { scenario: k.scenario, action: k.action },
+        }));
+        const preferencesFacts = extraction.preferences.map((p) => ({
+            content: p.content,
+            extraFields: { scenario: p.scenario, options: p.options, preferred: p.preferred },
+        }));
+
+        const [attitudes, facts, knowledge, preferences] = await Promise.all([
+            tracker.track("决策:态度层", () =>
+                executeMemoryDecision(dbPath, getTableForMemoryLayer(MemoryLayer.Attitude), attitudesFacts, channel, api, embedCfg, llmCfg),
+                `${attitudesFacts.length}条待处理`,
+            ),
+            tracker.track("决策:事实层", () =>
+                executeMemoryDecision(dbPath, getTableForMemoryLayer(MemoryLayer.Fact), factsFacts, channel, api, embedCfg, llmCfg),
+                `${factsFacts.length}条待处理`,
+            ),
+            tracker.track("决策:知识层", () =>
+                executeMemoryDecision(dbPath, getTableForMemoryLayer(MemoryLayer.Knowledge), knowledgeFacts, channel, api, embedCfg, llmCfg),
+                `${knowledgeFacts.length}条待处理`,
+            ),
+            tracker.track("决策:偏好层", () =>
+                executeMemoryDecision(dbPath, getTableForMemoryLayer(MemoryLayer.Preference), preferencesFacts, channel, api, embedCfg, llmCfg),
+                `${preferencesFacts.length}条待处理`,
+            ),
+        ]);
+
+        const trackLog = tracker.toLogString();
+        api.logger?.info?.(trackLog);
+
+        return {
+            attitudes,
+            facts,
+            knowledge,
+            preferences,
+            totalAdded: attitudes.added + facts.added + knowledge.added + preferences.added,
+            totalUpdated: attitudes.updated + facts.updated + knowledge.updated + preferences.updated,
+            totalDeleted: attitudes.deleted + facts.deleted + knowledge.deleted + preferences.deleted,
+            trackLog,
+        };
+    } finally {
+        clearTracker();
     }
-
-    // Step 1: Extract memories from text
-    const extraction = await extractMemories(inputText, llmCfg);
-
-    // Step 2 & 3: Decision + CRUD for each layer
-    const attitudesFacts = extraction.attitudes.map((a) => ({
-        content: a.content,
-        extraFields: { subject: a.subject, attitude: a.attitude },
-    }));
-    const factsFacts = extraction.facts.map((f) => ({
-        content: f.content,
-        extraFields: { subject: f.subject, definition: f.definition },
-    }));
-    const knowledgeFacts = extraction.knowledge.map((k) => ({
-        content: k.content,
-        extraFields: { scenario: k.scenario, action: k.action },
-    }));
-    const preferencesFacts = extraction.preferences.map((p) => ({
-        content: p.content,
-        extraFields: { scenario: p.scenario, options: p.options, preferred: p.preferred },
-    }));
-
-    const [attitudes, facts, knowledge, preferences] = await Promise.all([
-        executeMemoryDecision(
-            dbPath, getTableForMemoryLayer(MemoryLayer.Attitude),
-            attitudesFacts, channel, api, embedCfg, llmCfg,
-        ),
-        executeMemoryDecision(
-            dbPath, getTableForMemoryLayer(MemoryLayer.Fact),
-            factsFacts, channel, api, embedCfg, llmCfg,
-        ),
-        executeMemoryDecision(
-            dbPath, getTableForMemoryLayer(MemoryLayer.Knowledge),
-            knowledgeFacts, channel, api, embedCfg, llmCfg,
-        ),
-        executeMemoryDecision(
-            dbPath, getTableForMemoryLayer(MemoryLayer.Preference),
-            preferencesFacts, channel, api, embedCfg, llmCfg,
-        ),
-    ]);
-
-    return {
-        attitudes,
-        facts,
-        knowledge,
-        preferences,
-        totalAdded: attitudes.added + facts.added + knowledge.added + preferences.added,
-        totalUpdated: attitudes.updated + facts.updated + knowledge.updated + preferences.updated,
-        totalDeleted: attitudes.deleted + facts.deleted + knowledge.deleted + preferences.deleted,
-    };
 }
 
 /**
@@ -119,5 +136,12 @@ export function formatAddResult(result: AddMemoryResult): string {
     }
 
     lines.push(`总计: 新增 ${result.totalAdded}、更新 ${result.totalUpdated}、删除 ${result.totalDeleted}`);
+
+    if (result.trackLog) {
+        lines.push("");
+        lines.push("── 性能日志 ──");
+        lines.push(result.trackLog);
+    }
+
     return lines.join("\n");
 }
