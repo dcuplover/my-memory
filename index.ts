@@ -28,6 +28,12 @@ export default function (api: any) {
     api.on("before_prompt_build", async (event: { prompt: string }, ctx: { trigger?: string }) => {
         if (ctx?.trigger && ctx.trigger !== "user") return;
 
+        console.log("开始自动注入记忆，原始提示词：", event.prompt);
+        console.log("*******")
+        console.log(event)
+        console.log("~~~~~~~~~~~~~~")
+        console.log(ctx)
+        console.log("********")
         try {
             const context = await queryMemory(api, event.prompt);
             console.log("Queried memory context:", context);
