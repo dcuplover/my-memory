@@ -43,6 +43,7 @@ const SCHEMA_SEEDS: Record<string, (dims: number) => LanceDbRow> = {
         vector: makeVector(d),
         channel: "",
         credibility: 0,
+        extracted: false,
         createdAt: "",
     }),
     [TABLE_NAMES.DOCUMENT]: (d) => ({

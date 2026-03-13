@@ -54,6 +54,7 @@ export async function addDiary(
         vector: embeddings[i],
         channel,
         credibility,
+        extracted: false,
         createdAt: now,
     }));
 

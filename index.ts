@@ -255,14 +255,15 @@ export default function (api: any) {
     // /extract_diary_memory — 从日记中提取四层记忆
     api.registerCommand({
         name: "extract_diary_memory",
-        description: "从已存储的日记中提取四层记忆（态度/事实/知识/价值观选择），支持按日期、关键词或全量提取",
+        description: "从已存储的日记中提取四层记忆。默认只处理未提取过的新日记，支持按日期、关键词或 force 重新提取",
         async handler(ctx: any) {
             try {
                 const query = ctx.prompt?.trim() || ctx.args?.trim();
                 const date = ctx.date;
                 const sourceId = ctx.sourceId || ctx.source_id;
+                const force = ctx.force === true || ctx.force === "true";
 
-                const result = await extractMemoryFromDiary(api, { query: query || undefined, date, sourceId });
+                const result = await extractMemoryFromDiary(api, { query: query || undefined, date, sourceId, force });
                 return { text: formatAddResult(result) };
             } catch (err) {
                 return { text: `从日记提取记忆失败: ${String(err)}` };
@@ -507,13 +508,13 @@ export default function (api: any) {
     // extract_diary_memory tool
     api.registerTool({
         name: "extract_diary_memory",
-        description: "从已存储的日记中全面提取四层记忆（态度、事实、知识、价值观选择）。对日记内容进行分段提取，确保不遗漏，然后逐条与现有记忆比对决策（新增/更新/删除）。",
+        description: "从已存储的日记中提取四层记忆。默认只处理未提取过的新日记，避免重复处理。传 force=true 可重新提取全部。",
         parameters: {
             type: "object",
             properties: {
                 query: {
                     type: "string",
-                    description: "按关键词/语义搜索日记，留空则提取全部日记",
+                    description: "按关键词/语义搜索日记",
                 },
                 date: {
                     type: "string",
@@ -523,14 +524,19 @@ export default function (api: any) {
                     type: "string",
                     description: "指定某篇日记的 source_id",
                 },
+                force: {
+                    type: "boolean",
+                    description: "强制重新提取（包括已提取过的日记），默认 false",
+                },
             },
         },
-        async execute(_id: string, params: { query?: string; date?: string; source_id?: string }) {
+        async execute(_id: string, params: { query?: string; date?: string; source_id?: string; force?: boolean }) {
             try {
                 const result = await extractMemoryFromDiary(api, {
                     query: params.query,
                     date: params.date,
                     sourceId: params.source_id,
+                    force: params.force,
                 });
                 return { content: [{ type: "text", text: formatAddResult(result) }] };
             } catch (err) {

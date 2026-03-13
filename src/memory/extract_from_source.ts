@@ -142,16 +142,19 @@ async function runDecisionPipeline(
 // ═════════════════════════════════════════════════════════
 
 export type ExtractFromDiaryOptions = {
-    /** 按关键词/语义搜索日记，留空则提取全部日记 */
+    /** 按关键词/语义搜索日记，留空则提取未提取过的日记 */
     query?: string;
     /** 按日期筛选，格式 YYYY-MM-DD */
     date?: string;
     /** 按 source_id 指定某篇日记 */
     sourceId?: string;
+    /** 强制重新提取（包括已提取过的日记） */
+    force?: boolean;
 };
 
 /**
  * 从已存储的日记中提取四层记忆。
+ * 默认只处理未提取过的新日记（extracted = false），传 force=true 可重新提取全部。
  * 流程：查询日记内容 → 分段 LLM 提取 → 去重决策 → 写入记忆层
  */
 export async function extractMemoryFromDiary(
@@ -170,13 +173,17 @@ export async function extractMemoryFromDiary(
     const tracker = startTracker("日记记忆提取");
 
     try {
-        // Step 1: 获取日记内容
-        const diaryContent = await tracker.track("获取日记内容", async () => {
-            return fetchDiaryContent(dbPath, embedCfg, options, cfg, dims);
-        });
+        // Step 1: 获取日记内容（默认只获取未提取过的）
+        const { content: diaryContent, sourceIds: processedSourceIds } = await tracker.track(
+            "获取日记内容",
+            async () => fetchDiaryContent(dbPath, embedCfg, options, cfg, dims),
+        );
 
         if (!diaryContent || diaryContent.trim().length === 0) {
-            throw new Error("未找到符合条件的日记内容");
+            const msg = options.force
+                ? "未找到符合条件的日记内容"
+                : "没有未提取过的新日记（如需重新提取，请使用 force 参数）";
+            throw new Error(msg);
         }
 
         // Step 2: 分段提取四层记忆
@@ -194,11 +201,32 @@ export async function extractMemoryFromDiary(
         }
 
         // Step 3: 决策流程
-        return runDecisionPipeline(api, extraction, "diary", dbPath, embedCfg, llmCfg, dims, tracker);
+        const result = await runDecisionPipeline(api, extraction, "diary", dbPath, embedCfg, llmCfg, dims, tracker);
+
+        // Step 4: 标记已提取的日记
+        if (processedSourceIds.length > 0) {
+            await tracker.track("标记已提取", async () => {
+                const table = await ensureTable(dbPath, TABLE_NAMES.DIARY, dims);
+                for (const sid of processedSourceIds) {
+                    await table.update({
+                        where: `source_id = '${sid.replace(/'/g, "''")}'`,
+                        values: { extracted: true },
+                    });
+                }
+            }, `${processedSourceIds.length}篇日记`);
+        }
+
+        return result;
     } finally {
         clearTracker();
     }
 }
+
+type FetchDiaryResult = {
+    content: string;
+    /** 本次处理涉及的 source_id 列表，用于后续标记 extracted */
+    sourceIds: string[];
+};
 
 async function fetchDiaryContent(
     dbPath: string,
@@ -206,8 +234,9 @@ async function fetchDiaryContent(
     options: ExtractFromDiaryOptions,
     cfg: any,
     dims: number,
-): Promise<string> {
+): Promise<FetchDiaryResult> {
     const table = await ensureTable(dbPath, TABLE_NAMES.DIARY, dims);
+    const onlyNew = !options.force;
 
     if (options.sourceId) {
         // 按 source_id 获取某篇日记的所有 chunk
@@ -217,18 +246,26 @@ async function fetchDiaryContent(
             .limit(1000)
             .toArray();
         rows.sort((a: any, b: any) => (a.chunk_index ?? 0) - (b.chunk_index ?? 0));
-        return rows.map((r: any) => r.content).join("\n");
+        return {
+            content: rows.map((r: any) => r.content).join("\n"),
+            sourceIds: [...new Set(rows.map((r: any) => r.source_id as string))],
+        };
     }
 
     if (options.date) {
-        // 按日期获取所有日记
+        // 按日期获取日记（默认只获取未提取过的）
+        let filter = `date = '${options.date.replace(/'/g, "''")}'`;
+        if (onlyNew) filter += ` AND extracted = false`;
         const rows = await table
             .search("")
-            .where(`date = '${options.date.replace(/'/g, "''")}'`)
+            .where(filter)
             .limit(1000)
             .toArray();
         rows.sort((a: any, b: any) => (a.chunk_index ?? 0) - (b.chunk_index ?? 0));
-        return rows.map((r: any) => r.content).join("\n");
+        return {
+            content: rows.map((r: any) => r.content).join("\n"),
+            sourceIds: [...new Set(rows.map((r: any) => r.source_id as string))],
+        };
     }
 
     if (options.query) {
@@ -242,17 +279,29 @@ async function fetchDiaryContent(
             topK: cfg.topK ?? DEFAULT_TOP_K,
             embedCfg,
         });
-        return results.map((r: any) => r.content).join("\n\n");
+        const filtered = onlyNew ? results.filter((r: any) => !r.extracted) : results;
+        return {
+            content: filtered.map((r: any) => r.content).join("\n\n"),
+            sourceIds: [...new Set(filtered.map((r: any) => r.source_id as string).filter(Boolean))],
+        };
     }
 
-    // 默认：获取全部日记
-    const rows = await table.search("").limit(10000).toArray();
+    // 默认：获取未提取过的日记（force=true 时获取全部）
+    let rows: any[];
+    if (onlyNew) {
+        rows = await table.search("").where("extracted = false").limit(10000).toArray();
+    } else {
+        rows = await table.search("").limit(10000).toArray();
+    }
     rows.sort((a: any, b: any) => {
         const dateCompare = String(a.date ?? "").localeCompare(String(b.date ?? ""));
         if (dateCompare !== 0) return dateCompare;
         return (a.chunk_index ?? 0) - (b.chunk_index ?? 0);
     });
-    return rows.map((r: any) => r.content).join("\n");
+    return {
+        content: rows.map((r: any) => r.content).join("\n"),
+        sourceIds: [...new Set(rows.map((r: any) => r.source_id as string))],
+    };
 }
 
 // ═════════════════════════════════════════════════════════
