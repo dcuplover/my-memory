@@ -1,0 +1,12 @@
+{
+  "name": "my-memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw 分层记忆插件 — 基于 LanceDB 的混合检索记忆系统",
+  "dependencies": {
+    "@lancedb/lancedb": "^0.22.1"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}

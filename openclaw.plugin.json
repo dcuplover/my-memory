@@ -1,0 +1,87 @@
+{
+  "id": "my-memory",
+  "name": "my-memory",
+  "description": "OpenClaw 分层记忆插件 — 基于 LanceDB 的混合检索记忆系统",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "lanceDbPath": {
+        "type": "string",
+        "description": "LanceDB 数据库文件夹路径"
+      },
+      "ftsColumns": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "全文索引列名列表"
+      },
+      "resultLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "默认返回结果数"
+      },
+      "topK": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Rerank 前从向量库召回的候选数量，默认 10"
+      },
+      "embedBaseUrl": {
+        "type": "string",
+        "description": "Embedding 服务的 base URL，例如 https://api.openai.com/v1"
+      },
+      "embedModel": {
+        "type": "string",
+        "description": "Embedding 模型名称，例如 text-embedding-3-small"
+      },
+      "embedApiKey": {
+        "type": "string",
+        "description": "Embedding 服务的 API Key"
+      },
+      "embedDimensions": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Embedding 向量维度，默认 1536"
+      },
+      "rerankBaseUrl": {
+        "type": "string",
+        "description": "Rerank 服务的 base URL，例如 https://api.cohere.com/v1"
+      },
+      "rerankModel": {
+        "type": "string",
+        "description": "Rerank 模型名称，例如 rerank-multilingual-v3.0"
+      },
+      "rerankApiKey": {
+        "type": "string",
+        "description": "Rerank 服务的 API Key"
+      },
+      "llmBaseUrl": {
+        "type": "string",
+        "description": "LLM 服务的 base URL（OpenAI 兼容），例如 https://api.openai.com/v1"
+      },
+      "llmModel": {
+        "type": "string",
+        "description": "LLM 模型名称，例如 gpt-4o-mini"
+      },
+      "llmApiKey": {
+        "type": "string",
+        "description": "LLM 服务的 API Key"
+      },
+      "channelWeightsPath": {
+        "type": "string",
+        "description": "渠道可信度权重 JSON 文件路径，默认为插件目录下 channel_weights.json"
+      },
+      "chunkSize": {
+        "type": "integer",
+        "minimum": 100,
+        "description": "文档切分大小（字符数），默认 512"
+      },
+      "chunkOverlap": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "文档切分重叠大小（字符数），默认 128"
+      }
+    },
+    "required": ["lanceDbPath", "embedBaseUrl", "embedModel", "embedApiKey", "llmBaseUrl", "llmModel", "llmApiKey"]
+  }
+}
