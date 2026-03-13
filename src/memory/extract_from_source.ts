@@ -4,7 +4,6 @@ import { extractMemories, type ExtractionResult } from "./extract";
 import { executeMemoryDecision, type DecisionSummary } from "../llm/decision";
 import { MemoryLayer, getTableForMemoryLayer } from "./layers";
 import { ensureTable } from "../db/schema";
-import { getTable } from "../db/schema";
 import { search } from "../search/hybrid";
 import { splitIntoChunks } from "../document/chunker";
 import {
@@ -173,7 +172,7 @@ export async function extractMemoryFromDiary(
     try {
         // Step 1: 获取日记内容
         const diaryContent = await tracker.track("获取日记内容", async () => {
-            return fetchDiaryContent(dbPath, embedCfg, options, cfg);
+            return fetchDiaryContent(dbPath, embedCfg, options, cfg, dims);
         });
 
         if (!diaryContent || diaryContent.trim().length === 0) {
@@ -206,8 +205,9 @@ async function fetchDiaryContent(
     embedCfg: EmbedConfig,
     options: ExtractFromDiaryOptions,
     cfg: any,
+    dims: number,
 ): Promise<string> {
-    const table = await getTable(dbPath, TABLE_NAMES.DIARY);
+    const table = await ensureTable(dbPath, TABLE_NAMES.DIARY, dims);
 
     if (options.sourceId) {
         // 按 source_id 获取某篇日记的所有 chunk
@@ -291,7 +291,7 @@ export async function extractMemoryFromDocument(
         // Step 1: 获取文档内容
         const docContent = await tracker.track("获取文档内容", async () => {
             if (options.content) return options.content;
-            return fetchDocumentContent(dbPath, embedCfg, options, cfg);
+            return fetchDocumentContent(dbPath, embedCfg, options, cfg, dims);
         });
 
         if (!docContent || docContent.trim().length === 0) {
@@ -324,8 +324,9 @@ async function fetchDocumentContent(
     embedCfg: EmbedConfig,
     options: ExtractFromDocumentOptions,
     cfg: any,
+    dims: number,
 ): Promise<string> {
-    const table = await getTable(dbPath, TABLE_NAMES.DOCUMENT);
+    const table = await ensureTable(dbPath, TABLE_NAMES.DOCUMENT, dims);
 
     if (options.filePath) {
         const rows = await table

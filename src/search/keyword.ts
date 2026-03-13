@@ -1,5 +1,5 @@
 import type { LanceDbRow } from "@lancedb/lancedb";
-import { getTable, getFtsColumns } from "../db/schema";
+import { ensureTable, getFtsColumns } from "../db/schema";
 
 // ─── Keyword / FTS search (BM25) ───
 
@@ -10,7 +10,7 @@ export async function keywordSearch(
     limit: number,
     ftsColumns?: string[],
 ): Promise<LanceDbRow[]> {
-    const table = await getTable(dbPath, tableName);
+    const table = await ensureTable(dbPath, tableName);
     const columns = ftsColumns ?? getFtsColumns(tableName);
     const rows = await table.search(query, "fts", columns).limit(limit).toArray();
     return Array.isArray(rows) ? rows : [];

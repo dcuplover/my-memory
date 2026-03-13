@@ -69,6 +69,10 @@ const FTS_COLUMNS_MAP: Record<string, string[]> = {
     [TABLE_NAMES.DOCUMENT]: DEFAULT_DOCUMENT_FTS_COLUMNS,
 };
 
+// ─── Track which tables have had FTS indexes ensured this session ───
+
+const ftsEnsured = new Set<string>();
+
 // ─── Ensure table exists ───
 
 export async function ensureTable(
@@ -79,34 +83,40 @@ export async function ensureTable(
     const conn = await getConnection(dbPath);
     const existing = await conn.tableNames();
 
+    let table: LanceDbTable;
+
     if (existing.includes(tableName)) {
-        return conn.openTable(tableName);
-    }
+        table = await conn.openTable(tableName);
+    } else {
+        const seedFn = SCHEMA_SEEDS[tableName];
+        if (!seedFn) {
+            throw new Error(`Unknown table: ${tableName}`);
+        }
 
-    const seedFn = SCHEMA_SEEDS[tableName];
-    if (!seedFn) {
-        throw new Error(`Unknown table: ${tableName}`);
-    }
+        table = await conn.createTable(tableName, [seedFn(dims)]);
 
-    const table = await conn.createTable(tableName, [seedFn(dims)]);
-
-    // Create FTS index
-    const ftsColumns = FTS_COLUMNS_MAP[tableName];
-    if (ftsColumns) {
-        for (const col of ftsColumns) {
-            try {
-                await table.createIndex(col, { config: { inner: Index.fts() }, replace: true });
-            } catch {
-                // FTS index creation may fail silently on some columns; non-blocking
-            }
+        // Remove seed row
+        try {
+            await table.delete(`id = '__seed__'`);
+        } catch {
+            // Seed cleanup non-critical
         }
     }
 
-    // Remove seed row
-    try {
-        await table.delete(`id = '__seed__'`);
-    } catch {
-        // Seed cleanup non-critical
+    // Ensure FTS indexes exist (once per session per table)
+    const cacheKey = `${dbPath}::${tableName}`;
+    if (!ftsEnsured.has(cacheKey)) {
+        const ftsColumns = FTS_COLUMNS_MAP[tableName];
+        if (ftsColumns) {
+            for (const col of ftsColumns) {
+                try {
+                    await table.createIndex(col, { config: { inner: Index.fts() }, replace: true });
+                } catch {
+                    // FTS index creation may fail silently on some columns; non-blocking
+                }
+            }
+        }
+        ftsEnsured.add(cacheKey);
     }
 
     return table;
