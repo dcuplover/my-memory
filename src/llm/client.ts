@@ -1,3 +1,5 @@
+import { currentTracker, type TokenUsage } from "../tracker";
+
 export type LlmConfig = {
     baseUrl: string;
     model: string;
@@ -9,15 +11,20 @@ export type ChatMessage = {
     content: string;
 };
 
+export type LlmResult = {
+    content: string;
+    usage: TokenUsage;
+};
+
 /**
  * Call OpenAI-compatible chat completion API.
- * Returns the assistant message content.
+ * Returns content + token usage.
  */
 export async function chatCompletion(
     messages: ChatMessage[],
     cfg: LlmConfig,
-    options?: { temperature?: number; maxTokens?: number },
-): Promise<string> {
+    options?: { temperature?: number; maxTokens?: number; stepName?: string },
+): Promise<LlmResult> {
     const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     const resp = await fetch(url, {
         method: "POST",
@@ -40,27 +47,40 @@ export async function chatCompletion(
 
     const json = (await resp.json()) as {
         choices: { message: { content: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
-    return json.choices[0]?.message?.content ?? "";
+
+    const content = json.choices[0]?.message?.content ?? "";
+    const usage: TokenUsage = {
+        promptTokens: json.usage?.prompt_tokens ?? 0,
+        completionTokens: json.usage?.completion_tokens ?? 0,
+        totalTokens: json.usage?.total_tokens ?? 0,
+    };
+
+    const stepName = options?.stepName ?? "llm_call";
+    currentTracker()?.addTokens(stepName, usage);
+
+    return { content, usage };
 }
 
 /**
- * Call LLM and parse JSON response.
+ * Call LLM and parse JSON response. Returns parsed data + token usage.
  */
 export async function chatCompletionJson<T>(
     messages: ChatMessage[],
     cfg: LlmConfig,
-    options?: { temperature?: number; maxTokens?: number },
-): Promise<T> {
-    const raw = await chatCompletion(messages, cfg, options);
+    options?: { temperature?: number; maxTokens?: number; stepName?: string },
+): Promise<{ data: T; usage: TokenUsage }> {
+    const result = await chatCompletion(messages, cfg, options);
 
     // Extract JSON from possible markdown code fence
-    const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, raw];
-    const jsonStr = (jsonMatch[1] ?? raw).trim();
+    const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, result.content];
+    const jsonStr = (jsonMatch[1] ?? result.content).trim();
 
     try {
-        return JSON.parse(jsonStr) as T;
+        const data = JSON.parse(jsonStr) as T;
+        return { data, usage: result.usage };
     } catch {
-        throw new Error(`Failed to parse LLM JSON response: ${raw.slice(0, 500)}`);
+        throw new Error(`Failed to parse LLM JSON response: ${result.content.slice(0, 500)}`);
     }
 }

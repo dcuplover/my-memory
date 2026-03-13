@@ -41,9 +41,10 @@ export async function extractMemories(
     llmCfg: LlmConfig,
 ): Promise<ExtractionResult> {
     const messages = buildMemoryExtractionMessages(inputText);
-    const result = await chatCompletionJson<ExtractionResult>(messages, llmCfg, {
+    const { data: result } = await chatCompletionJson<ExtractionResult>(messages, llmCfg, {
         temperature: 0.2,
         maxTokens: 4000,
+        stepName: "LLM记忆提取",
     });
 
     // Validate structure

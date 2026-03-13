@@ -34,7 +34,7 @@ export async function addDocument(
 
     // Step 1: Generate summary
     const messages = buildDocumentSummaryMessages(content, title);
-    const summary = await chatCompletion(messages, llmCfg, { temperature: 0.3, maxTokens: 1000 });
+    const { content: summary } = await chatCompletion(messages, llmCfg, { temperature: 0.3, maxTokens: 1000 });
 
     // Step 2: Embed the summary
     const vector = await generateEmbedding(summary, embedCfg);

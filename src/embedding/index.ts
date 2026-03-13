@@ -1,4 +1,5 @@
 import { getEmbedConfig } from "../config";
+import { currentTracker, type TokenUsage } from "../tracker";
 
 export type EmbedConfig = {
     baseUrl: string;
@@ -27,7 +28,18 @@ export async function generateEmbedding(text: string, cfg: EmbedConfig): Promise
         throw new Error(`Embedding API error ${resp.status}: ${body}`);
     }
 
-    const json = (await resp.json()) as { data: { embedding: number[] }[] };
+    const json = (await resp.json()) as {
+        data: { embedding: number[] }[];
+        usage?: { prompt_tokens?: number; total_tokens?: number };
+    };
+
+    const usage: TokenUsage = {
+        promptTokens: json.usage?.prompt_tokens ?? 0,
+        completionTokens: 0,
+        totalTokens: json.usage?.total_tokens ?? 0,
+    };
+    currentTracker()?.addTokens("embedding", usage);
+
     return json.data[0].embedding;
 }
 
@@ -54,7 +66,18 @@ export async function generateEmbeddings(texts: string[], cfg: EmbedConfig): Pro
         throw new Error(`Embedding API error ${resp.status}: ${body}`);
     }
 
-    const json = (await resp.json()) as { data: { embedding: number[]; index: number }[] };
+    const json = (await resp.json()) as {
+        data: { embedding: number[]; index: number }[];
+        usage?: { prompt_tokens?: number; total_tokens?: number };
+    };
+
+    const usage: TokenUsage = {
+        promptTokens: json.usage?.prompt_tokens ?? 0,
+        completionTokens: 0,
+        totalTokens: json.usage?.total_tokens ?? 0,
+    };
+    currentTracker()?.addTokens("embedding_batch", usage);
+
     return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
 

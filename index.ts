@@ -19,23 +19,74 @@ import { LAYER_DESCRIPTIONS, FileLayer, getTableForFileLayer } from "./src/memor
 import type { EmbedConfig } from "./src/embedding";
 import type { RerankConfig } from "./src/search/reranker";
 
+/**
+ * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
+ * event.prompt 可能包含大量元数据（Conversation info、Sender info 等），
+ * 真正的用户消息在最后一行，格式为 "sender_id: 实际消息"。
+ * 也可以从 event.messages 中获取最后一条 user 消息。
+ */
+function extractUserQuery(event: { prompt: string; messages?: Array<{ role: string; content: any }> }): string | undefined {
+    // 优先从 messages 数组中提取最后一条 user 消息
+    if (event.messages && Array.isArray(event.messages)) {
+        for (let i = event.messages.length - 1; i >= 0; i--) {
+            const msg = event.messages[i];
+            if (msg.role === "user") {
+                const text = extractTextFromContent(msg.content);
+                if (text) return text;
+            }
+        }
+    }
+
+    // 回退：从 prompt 末尾提取（格式为 "sender_id: 实际消息"）
+    const prompt = event.prompt;
+    if (!prompt) return undefined;
+
+    const lines = prompt.trim().split("\n");
+    const lastLine = lines[lines.length - 1]?.trim();
+    if (!lastLine) return undefined;
+
+    // 匹配 "ou_xxxx: 实际消息" 格式
+    const match = lastLine.match(/^[\w]+:\s*(.+)$/);
+    return match ? match[1].trim() : lastLine;
+}
+
+/**
+ * 从 message.content 中提取纯文本。
+ * content 可能是字符串、或 Array<{ type: "text", text: string }>。
+ */
+function extractTextFromContent(content: any): string | undefined {
+    if (typeof content === "string") return content.trim() || undefined;
+    if (Array.isArray(content)) {
+        const texts: string[] = [];
+        for (const part of content) {
+            if (typeof part === "string") {
+                texts.push(part);
+            } else if (part?.type === "text" && typeof part.text === "string") {
+                texts.push(part.text);
+            }
+        }
+        const joined = texts.join("\n").trim();
+        return joined || undefined;
+    }
+    return undefined;
+}
+
 export default function (api: any) {
 
     // ═══════════════════════════════════════════════════════════
     // 1. before_prompt_build — 自动记忆查询与上下文注入
     // ═══════════════════════════════════════════════════════════
 
-    api.on("before_prompt_build", async (event: { prompt: string }, ctx: { trigger?: string }) => {
+    api.on("before_prompt_build", async (event: { prompt: string; messages?: Array<{ role: string; content: any }> }, ctx: { trigger?: string }) => {
         if (ctx?.trigger && ctx.trigger !== "user") return;
 
-        console.log("开始自动注入记忆，原始提示词：", event.prompt);
-        console.log("*******")
-        console.log(event)
-        console.log("~~~~~~~~~~~~~~")
-        console.log(ctx)
-        console.log("********")
+        // 从 event 中提取真正的用户查询文本
+        const userQuery = extractUserQuery(event);
+        if (!userQuery) return;
+
+        console.log("提取到用户查询：", userQuery);
         try {
-            const context = await queryMemory(api, event.prompt);
+            const context = await queryMemory(api, userQuery);
             console.log("Queried memory context:", context);
             if (!context) return;
             return { prependContext: context };

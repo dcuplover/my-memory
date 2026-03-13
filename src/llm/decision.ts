@@ -81,7 +81,7 @@ export async function executeMemoryDecision(
     // Stage 3: LLM decision
     const factTexts = newFacts.map((f) => f.content);
     const messages = buildMemoryDecisionMessages(factTexts, oldCandidates);
-    const decision = await chatCompletionJson<DecisionResult>(messages, llmCfg, { temperature: 0.1 });
+    const { data: decision } = await chatCompletionJson<DecisionResult>(messages, llmCfg, { temperature: 0.1, stepName: `LLM决策:${tableName}` });
 
     // Stage 4: Execute actions
     const summary: DecisionSummary = { added: 0, updated: 0, deleted: 0, unchanged: 0 };
