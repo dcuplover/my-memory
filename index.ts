@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from "fs";
+import { resolve, extname, basename } from "path";
 import { queryMemory } from "./src/memory/query";
 import { addMemory, formatAddResult } from "./src/memory/add";
 import { extractMemoryFromDiary, extractMemoryFromDocument } from "./src/memory/extract_from_source";
@@ -120,19 +122,39 @@ export default function (api: any) {
         },
     });
 
-    // /add_diary — 添加日记
+    // /add_diary — 添加日记（支持文件路径或直接文本）
     api.registerCommand({
         name: "add_diary",
-        description: "添加日记到日记本（全文切分+向量化索引）",
+        description: "添加日记到日记本。支持直接传入文本，或传入 .md 文件路径自动读取内容。",
         async handler(ctx: any) {
             try {
-                const text = ctx.prompt?.trim() || ctx.args?.trim();
-                if (!text) return { text: "请提供日记内容。" };
+                const input = ctx.prompt?.trim() || ctx.args?.trim();
+                if (!input) return { text: "请提供日记内容或 .md 文件路径。" };
 
-                const title = ctx.title || `日记 ${new Date().toLocaleDateString("zh-CN")}`;
-                const date = ctx.date || new Date().toISOString().slice(0, 10);
+                let text: string;
+                let title: string;
+                let date: string;
+
+                // 判断是否为文件路径
+                const possiblePath = resolve(input);
+                if (
+                    (input.endsWith(".md") || input.endsWith(".txt")) &&
+                    existsSync(possiblePath)
+                ) {
+                    text = readFileSync(possiblePath, "utf-8");
+                    title = ctx.title || basename(possiblePath, extname(possiblePath));
+                    date = ctx.date || new Date().toISOString().slice(0, 10);
+                    api.logger?.info?.(`[add_diary] 从文件读取: ${possiblePath} (${text.length}字符)`);
+                } else {
+                    text = input;
+                    title = ctx.title || `日记 ${new Date().toLocaleDateString("zh-CN")}`;
+                    date = ctx.date || new Date().toISOString().slice(0, 10);
+                }
+
+                if (!text.trim()) return { text: "文件内容为空。" };
+
                 const result = await addDiary(api, text, title, date);
-                return { text: `日记处理完成：共切分为 ${result.chunksAdded} 个片段并已索引。` };
+                return { text: `日记处理完成：共切分为 ${result.chunksAdded} 个片段并已索引。（标题: ${title}）` };
             } catch (err) {
                 return { text: `添加日记失败: ${String(err)}` };
             }
@@ -301,16 +323,20 @@ export default function (api: any) {
         },
     });
 
-    // add_diary tool
+    // add_diary tool（支持文件路径或直接文本）
     api.registerTool({
         name: "add_diary",
-        description: "添加日记到日记本层。将整篇日记进行切分、向量化和索引，以便后续通过语义搜索查找。",
+        description: "添加日记到日记本层。支持传入日记全文内容，或传入 .md/.txt 文件路径自动读取。",
         parameters: {
             type: "object",
             properties: {
                 content: {
                     type: "string",
-                    description: "日记全文内容",
+                    description: "日记全文内容（与 file_path 二选一）",
+                },
+                file_path: {
+                    type: "string",
+                    description: ".md 或 .txt 文件路径，插件会自动读取内容（与 content 二选一）",
                 },
                 title: {
                     type: "string",
@@ -321,14 +347,34 @@ export default function (api: any) {
                     description: "日记日期，格式 YYYY-MM-DD",
                 },
             },
-            required: ["content"],
         },
-        async execute(_id: string, params: { content: string; title?: string; date?: string }) {
+        async execute(_id: string, params: { content?: string; file_path?: string; title?: string; date?: string }) {
             try {
-                const title = params.title || `日记 ${new Date().toLocaleDateString("zh-CN")}`;
+                let text: string;
+                let title: string;
+
+                if (params.file_path) {
+                    const fullPath = resolve(params.file_path);
+                    if (!existsSync(fullPath)) {
+                        return { content: [{ type: "text", text: `文件不存在: ${fullPath}` }] };
+                    }
+                    text = readFileSync(fullPath, "utf-8");
+                    title = params.title || basename(fullPath, extname(fullPath));
+                    api.logger?.info?.(`[add_diary] 从文件读取: ${fullPath} (${text.length}字符)`);
+                } else if (params.content) {
+                    text = params.content;
+                    title = params.title || `日记 ${new Date().toLocaleDateString("zh-CN")}`;
+                } else {
+                    return { content: [{ type: "text", text: "请提供 content 或 file_path 参数。" }] };
+                }
+
+                if (!text.trim()) {
+                    return { content: [{ type: "text", text: "内容为空。" }] };
+                }
+
                 const date = params.date || new Date().toISOString().slice(0, 10);
-                const result = await addDiary(api, params.content, title, date);
-                return { content: [{ type: "text", text: `日记已索引：共 ${result.chunksAdded} 个片段。` }] };
+                const result = await addDiary(api, text, title, date);
+                return { content: [{ type: "text", text: `日记已索引：共 ${result.chunksAdded} 个片段。（标题: ${title}）` }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `添加日记失败: ${String(err)}` }] };
             }

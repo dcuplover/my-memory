@@ -119,7 +119,7 @@ npm install
 | 命令 | 说明 | 用法 |
 |------|------|------|
 | `/add_memory` | 从文本中提取四层记忆 | `/add_memory 这段文字的内容...` |
-| `/add_diary` | 添加日记（切分+向量化） | `/add_diary 今天做了一个很有趣的实验...` |
+| `/add_diary` | 添加日记（支持文件路径或直接文本） | `/add_diary /path/to/diary.md` 或 `/add_diary 今天做了...` |
 | `/add_document` | 添加文档到文件库 | `/add_document 文档正文内容...` |
 | `/query_diary` | 直接查询日记本 | `/query_diary 上次实验的结果` |
 | `/query_document` | 直接查询文件库 | `/query_document LanceDB 使用方法` |
@@ -135,7 +135,7 @@ npm install
 | 工具名 | 触发场景 |
 |--------|----------|
 | `add_memory` | 当你说"记住这个"、"保存这条信息" |
-| `add_diary` | 当你说"把这个存为日记" |
+| `add_diary` | 当你说"把这个存为日记"、"导入这篇日记" |
 | `add_document` | 当你说"索引这个文档" |
 | `query_diary` | 当你说"搜索我的日记" |
 | `query_document` | 当你说"查找文档" |

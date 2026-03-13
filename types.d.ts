@@ -1,3 +1,14 @@
+declare module "fs" {
+    export function readFileSync(path: string, encoding: string): string;
+    export function existsSync(path: string): boolean;
+}
+
+declare module "path" {
+    export function resolve(...paths: string[]): string;
+    export function basename(path: string, ext?: string): string;
+    export function extname(path: string): string;
+}
+
 declare module "@lancedb/lancedb" {
     export type LanceDbRow = Record<string, unknown>;
 
