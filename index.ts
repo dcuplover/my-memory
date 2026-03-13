@@ -5,7 +5,8 @@ import { addMemory, formatAddResult } from "./src/memory/add";
 import { extractMemoryFromDiary, extractMemoryFromDocument } from "./src/memory/extract_from_source";
 import { addDiary } from "./src/document/diary";
 import { addDocument } from "./src/document/file";
-import { ensureAllTables } from "./src/db/schema";
+import { ensureAllTables, ensureTable } from "./src/db/schema";
+import { countRows } from "./src/db/crud";
 import { search, type SearchMode } from "./src/search/hybrid";
 import { formatMemoryResults } from "./src/formatter";
 import {
@@ -18,7 +19,7 @@ import {
     DEFAULT_EMBED_DIMENSIONS,
     TABLE_NAMES,
 } from "./src/config";
-import { LAYER_DESCRIPTIONS, FileLayer, getTableForFileLayer } from "./src/memory/layers";
+import { LAYER_DESCRIPTIONS, FileLayer, getTableForFileLayer, MemoryLayer, ALL_MEMORY_LAYERS, getTableForMemoryLayer } from "./src/memory/layers";
 import type { EmbedConfig } from "./src/embedding";
 import type { RerankConfig } from "./src/search/reranker";
 
@@ -73,6 +74,108 @@ function extractTextFromContent(content: any): string | undefined {
         return joined || undefined;
     }
     return undefined;
+}
+
+const LAYER_ALIAS: Record<string, MemoryLayer> = {
+    attitude: MemoryLayer.Attitude, "态度": MemoryLayer.Attitude,
+    fact: MemoryLayer.Fact, "事实": MemoryLayer.Fact,
+    knowledge: MemoryLayer.Knowledge, "知识": MemoryLayer.Knowledge,
+    preference: MemoryLayer.Preference, "偏好": MemoryLayer.Preference, "价值观": MemoryLayer.Preference,
+};
+
+const LAYER_LABELS: Record<MemoryLayer, string> = {
+    [MemoryLayer.Attitude]: "态度层",
+    [MemoryLayer.Fact]: "事实层",
+    [MemoryLayer.Knowledge]: "知识层",
+    [MemoryLayer.Preference]: "价值观选择层",
+};
+
+/**
+ * list_memory 的核心实现。
+ * 输入格式: "[层名] [关键词]"，均可选。
+ */
+async function listMemoryImpl(api: any, input: string): Promise<string> {
+    const dbPath = getLanceDbPath(api);
+    if (!dbPath) throw new Error("LanceDB path not configured");
+
+    const cfg = getPluginConfig(api);
+    const dims = cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
+    const limit = cfg.resultLimit ?? DEFAULT_RESULT_LIMIT;
+    const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
+
+    // 解析输入：第一个 token 可能是层名
+    const tokens = input.split(/\s+/).filter(Boolean);
+    let targetLayer: MemoryLayer | undefined;
+    let keyword = "";
+
+    if (tokens.length > 0) {
+        const firstLower = tokens[0].toLowerCase();
+        if (LAYER_ALIAS[firstLower]) {
+            targetLayer = LAYER_ALIAS[firstLower];
+            keyword = tokens.slice(1).join(" ");
+        } else {
+            keyword = tokens.join(" ");
+        }
+    }
+
+    const layers = targetLayer ? [targetLayer] : ALL_MEMORY_LAYERS;
+    const sections: string[] = [];
+
+    for (const layer of layers) {
+        const tableName = getTableForMemoryLayer(layer);
+        const table = await ensureTable(dbPath, tableName, dims);
+        const total = await table.countRows();
+        const label = LAYER_LABELS[layer];
+
+        if (total === 0) {
+            sections.push(`## ${label}（${layer}）\n暂无记忆。\n`);
+            continue;
+        }
+
+        let rows: any[];
+        if (keyword && embedCfg) {
+            // 有关键词：混合搜索
+            const results = await search({
+                dbPath,
+                tableName,
+                query: keyword,
+                mode: "hybrid",
+                limit,
+                topK: cfg.topK ?? DEFAULT_TOP_K,
+                embedCfg,
+            });
+            rows = results;
+        } else {
+            // 无关键词：列出最近的记忆
+            rows = await table.search("").limit(keyword ? limit : 20).toArray();
+            // 按创建时间倒序
+            rows.sort((a: any, b: any) =>
+                String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
+            );
+        }
+
+        const header = keyword
+            ? `## ${label}（${layer}）— 共 ${total} 条，搜索 "${keyword}" 命中 ${rows.length} 条`
+            : `## ${label}（${layer}）— 共 ${total} 条，最近 ${rows.length} 条`;
+
+        const lines = rows.map((r: any, i: number) => {
+            const parts: string[] = [];
+            if (r.content) parts.push(truncateStr(String(r.content), 120));
+            if (r.subject) parts.push(`[${r.subject}]`);
+            if (r.scenario) parts.push(`场景: ${truncateStr(String(r.scenario), 60)}`);
+            const date = r.createdAt ? String(r.createdAt).slice(0, 10) : "";
+            if (date) parts.push(date);
+            return `${i + 1}. ${parts.join(" | ")}`;
+        });
+
+        sections.push([header, ...lines].join("\n") + "\n");
+    }
+
+    return sections.join("\n");
+}
+
+function truncateStr(s: string, max: number): string {
+    return s.length <= max ? s : s.slice(0, max) + "...";
 }
 
 export default function (api: any) {
@@ -288,6 +391,20 @@ export default function (api: any) {
                 return { text: formatAddResult(result) };
             } catch (err) {
                 return { text: `从文档提取记忆失败: ${String(err)}` };
+            }
+        },
+    });
+
+    // /list_memory — 查看已存储的记忆
+    api.registerCommand({
+        name: "list_memory",
+        description: "查看已存储的记忆。支持指定层级(attitude/fact/knowledge/preference)和关键词搜索",
+        async handler(ctx: any) {
+            try {
+                const input = ctx.prompt?.trim() || ctx.args?.trim() || "";
+                return { text: await listMemoryImpl(api, input) };
+            } catch (err) {
+                return { text: `查看记忆失败: ${String(err)}` };
             }
         },
     });
@@ -576,6 +693,37 @@ export default function (api: any) {
                 return { content: [{ type: "text", text: formatAddResult(result) }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `从文档提取记忆失败: ${String(err)}` }] };
+            }
+        },
+    });
+
+    // list_memory tool
+    api.registerTool({
+        name: "list_memory",
+        description: "查看已存储的记忆列表。可指定层级（attitude/fact/knowledge/preference）和关键词搜索。不传参数则显示所有层的统计和最近记忆。",
+        parameters: {
+            type: "object",
+            properties: {
+                layer: {
+                    type: "string",
+                    description: "记忆层级: attitude(态度), fact(事实), knowledge(知识), preference(价值观选择)。留空查看全部。",
+                    enum: ["attitude", "fact", "knowledge", "preference"],
+                },
+                keyword: {
+                    type: "string",
+                    description: "搜索关键词，留空列出最近记忆",
+                },
+            },
+        },
+        async execute(_id: string, params: { layer?: string; keyword?: string }) {
+            try {
+                const parts: string[] = [];
+                if (params.layer) parts.push(params.layer);
+                if (params.keyword) parts.push(params.keyword);
+                const text = await listMemoryImpl(api, parts.join(" "));
+                return { content: [{ type: "text", text }] };
+            } catch (err) {
+                return { content: [{ type: "text", text: `查看记忆失败: ${String(err)}` }] };
             }
         },
     });

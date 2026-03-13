@@ -125,6 +125,7 @@ npm install
 | `/query_document` | 直接查询文件库 | `/query_document LanceDB 使用方法` |
 | `/extract_diary_memory` | 从日记中提取四层记忆 | `/extract_diary_memory 2024-01-15` |
 | `/extract_document_memory` | 从文档中提取四层记忆 | `/extract_document_memory 文档内容...` |
+| `/list_memory` | 查看已存储的记忆列表 | `/list_memory` 或 `/list_memory attitude` 或 `/list_memory fact 关键词` |
 
 ---
 
@@ -141,6 +142,7 @@ npm install
 | `query_document` | 当你说"查找文档" |
 | `extract_diary_memory` | 当你说"从日记里提取记忆"、"整理日记中的知识" |
 | `extract_document_memory` | 当你说"从这篇文档提取记忆"、"整理文档中的知识" |
+| `list_memory` | 当你说"查看我的记忆"、"列出态度层记忆"、"搜索记忆 XXX" |
 
 ---
 
