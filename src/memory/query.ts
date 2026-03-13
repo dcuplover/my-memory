@@ -1,5 +1,3 @@
-import { chatCompletionJson, type LlmConfig } from "../llm/client";
-import { buildLayerSelectionMessages } from "../llm/prompts";
 import { search, type SearchMode, type SearchResult } from "../search/hybrid";
 import { formatMemoryResults, formatFileSummary, assembleContext } from "../formatter";
 import {
@@ -9,14 +7,11 @@ import {
     getTableForMemoryLayer,
     getTableForFileLayer,
     LAYER_DESCRIPTIONS,
-    parseMemoryLayers,
-    parseFileLayers,
 } from "./layers";
 import {
     getPluginConfig,
     getLanceDbPath,
     getEmbedConfig,
-    getLlmConfig,
     getRerankConfig,
     DEFAULT_RESULT_LIMIT,
     DEFAULT_TOP_K,
@@ -26,10 +21,36 @@ import type { EmbedConfig } from "../embedding";
 import type { RerankConfig } from "../search/reranker";
 import { startTracker, clearTracker } from "../tracker";
 
-type LayerSelection = {
-    layers: string[];
-    reason: string;
-};
+// ─── 关键词规则路由（替代 LLM 层级判断，0ms 完成） ───
+
+const DIARY_KEYWORDS = /日记|日志|diary|journal/i;
+const DOCUMENT_KEYWORDS = /文档|文件|文件库|document|file/i;
+const ATTITUDE_KEYWORDS = /态度|看法|感受|觉得|认为|怎么看|感觉|讨厌|喜欢|喜不喜欢|opinion|attitude|feel/i;
+const PREFERENCE_KEYWORDS = /偏好|选择|倾向|用哪个|prefer|哪一个|推荐|选哪|更喜欢|最喜欢|爱吃|喜欢吃|喜欢喝|喜欢用|喜欢看|喜欢听|爱好/i;
+const KNOWLEDGE_KEYWORDS = /怎么做|该不该|最佳实践|如何|方法|步骤|how to|best practice|应该|不应该|规则/i;
+const FACT_KEYWORDS = /是什么|什么是|定义|概念|是谁|哪里|什么时候|fact|what is|who is/i;
+
+function selectLayersByKeywords(query: string): { memoryLayers: MemoryLayer[]; fileLayers: FileLayer[] } {
+    const memoryLayers: MemoryLayer[] = [];
+    const fileLayers: FileLayer[] = [];
+
+    // 文件层：仅在明确提到时选中
+    if (DIARY_KEYWORDS.test(query)) fileLayers.push(FileLayer.Diary);
+    if (DOCUMENT_KEYWORDS.test(query)) fileLayers.push(FileLayer.Document);
+
+    // 记忆层：按关键词匹配
+    if (ATTITUDE_KEYWORDS.test(query)) memoryLayers.push(MemoryLayer.Attitude);
+    if (PREFERENCE_KEYWORDS.test(query)) memoryLayers.push(MemoryLayer.Preference);
+    if (KNOWLEDGE_KEYWORDS.test(query)) memoryLayers.push(MemoryLayer.Knowledge);
+    if (FACT_KEYWORDS.test(query)) memoryLayers.push(MemoryLayer.Fact);
+
+    // 如果没匹配到任何记忆层，默认查全部四层
+    if (memoryLayers.length === 0 && fileLayers.length === 0) {
+        memoryLayers.push(...ALL_MEMORY_LAYERS);
+    }
+
+    return { memoryLayers, fileLayers };
+}
 
 /**
  * Main memory query logic for before_prompt_build hook.
@@ -40,14 +61,13 @@ export async function queryMemory(api: any, prompt: string): Promise<string | un
     if (!dbPath) return undefined;
 
     const normalizedPrompt = prompt.trim();
-    if (normalizedPrompt.length < (cfg.resultLimit ?? DEFAULT_MIN_PROMPT_LENGTH)) return undefined;
+    if (normalizedPrompt.length < DEFAULT_MIN_PROMPT_LENGTH) return undefined;
 
     const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
-    const llmCfg = getLlmConfig(api) as LlmConfig | undefined;
     const rerankCfg = getRerankConfig(api) as RerankConfig | undefined;
 
-    if (!embedCfg || !llmCfg) {
-        api.logger?.warn?.("Memory query skipped: missing embed or LLM config");
+    if (!embedCfg) {
+        api.logger?.warn?.("Memory query skipped: missing embed config");
         return undefined;
     }
 
@@ -57,79 +77,72 @@ export async function queryMemory(api: any, prompt: string): Promise<string | un
     const tracker = startTracker("记忆查询");
 
     try {
-        // Step 1: LLM determines which layers to query
-        let selectedMemoryLayers: MemoryLayer[];
-        let selectedFileLayers: FileLayer[];
+        // Step 1: 关键词规则路由（替代 LLM，0ms）
+        const { memoryLayers: selectedMemoryLayers, fileLayers: selectedFileLayers } =
+            selectLayersByKeywords(normalizedPrompt);
 
-        try {
-            const { data: selection } = await tracker.track("LLM层级判断", () =>
-                chatCompletionJson<LayerSelection>(
-                    buildLayerSelectionMessages(normalizedPrompt),
-                    llmCfg,
-                    { temperature: 0.1, stepName: "LLM层级判断" },
-                ),
-                `prompt: "${normalizedPrompt.slice(0, 50)}..."`,
-            );
-            selectedMemoryLayers = parseMemoryLayers(selection.layers);
-            selectedFileLayers = parseFileLayers(selection.layers);
-        } catch {
-            selectedMemoryLayers = [...ALL_MEMORY_LAYERS];
-            selectedFileLayers = [];
-        }
+        tracker.track("关键词路由", () =>
+            Promise.resolve({ memoryLayers: selectedMemoryLayers, fileLayers: selectedFileLayers }),
+            `memory=[${selectedMemoryLayers}] file=[${selectedFileLayers}]`,
+        );
 
-        if (selectedMemoryLayers.length === 0 && selectedFileLayers.length === 0) {
-            selectedMemoryLayers = [...ALL_MEMORY_LAYERS];
-        }
-
-        const contextSections: (string | undefined)[] = [];
         const searchMode: SearchMode = "hybrid";
 
-        // Step 2: Search selected memory layers
+        // Step 2: 并行执行所有搜索
+        const searchTasks: Array<Promise<{ type: "memory" | "file" | "summary"; layer: string; results: SearchResult[] }>> = [];
+
+        // 选中的记忆层 — 全量搜索
         for (const layer of selectedMemoryLayers) {
             const tableName = getTableForMemoryLayer(layer);
-            try {
-                const results = await tracker.track(`检索:${layer}`, () =>
-                    search({ dbPath, tableName, query: normalizedPrompt, mode: searchMode, limit: resultLimit, topK, embedCfg, rerankCfg }),
-                    `table=${tableName}`,
-                );
-                const label = LAYER_DESCRIPTIONS[layer];
-                contextSections.push(formatMemoryResults(results, label));
-            } catch (err) {
-                api.logger?.info?.(`Memory layer ${layer} search failed: ${String(err)}`);
-            }
+            searchTasks.push(
+                search({ dbPath, tableName, query: normalizedPrompt, mode: searchMode, limit: resultLimit, topK, embedCfg, rerankCfg })
+                    .then((results) => ({ type: "memory" as const, layer, results }))
+                    .catch(() => ({ type: "memory" as const, layer, results: [] })),
+            );
         }
 
-        // Step 3: Search selected file layers
+        // 选中的文件层 — 全量搜索
         for (const layer of selectedFileLayers) {
             const tableName = getTableForFileLayer(layer);
-            try {
-                const results = await tracker.track(`检索:${layer}`, () =>
-                    search({ dbPath, tableName, query: normalizedPrompt, mode: searchMode, limit: resultLimit, topK, embedCfg, rerankCfg }),
-                    `table=${tableName}`,
-                );
-                const label = LAYER_DESCRIPTIONS[layer];
-                contextSections.push(formatMemoryResults(results, label));
-            } catch (err) {
-                api.logger?.info?.(`File layer ${layer} search failed: ${String(err)}`);
-            }
+            searchTasks.push(
+                search({ dbPath, tableName, query: normalizedPrompt, mode: searchMode, limit: resultLimit, topK, embedCfg, rerankCfg })
+                    .then((results) => ({ type: "file" as const, layer, results }))
+                    .catch(() => ({ type: "file" as const, layer, results: [] })),
+            );
         }
 
-        // Step 4: Check unselected file layers for summary count
+        // 未选中的文件层 — 概要检查（仅向量搜索，更快）
         const unselectedFileLayers = Object.values(FileLayer).filter(
             (l) => !selectedFileLayers.includes(l),
         );
         for (const layer of unselectedFileLayers) {
             const tableName = getTableForFileLayer(layer);
-            try {
-                const results = await tracker.track(`概要检查:${layer}`, () =>
-                    search({ dbPath, tableName, query: normalizedPrompt, mode: "vector", limit: 3, topK: 3, embedCfg }),
-                );
+            searchTasks.push(
+                search({ dbPath, tableName, query: normalizedPrompt, mode: "vector", limit: 3, topK: 3, embedCfg })
+                    .then((results) => ({ type: "summary" as const, layer, results }))
+                    .catch(() => ({ type: "summary" as const, layer, results: [] })),
+            );
+        }
+
+        const allResults = await tracker.track("并行检索", () => Promise.all(searchTasks),
+            `共 ${searchTasks.length} 个搜索任务`,
+        );
+
+        // Step 3: 组装结果
+        const contextSections: (string | undefined)[] = [];
+
+        for (const { type, layer, results } of allResults) {
+            if (type === "summary") {
                 if (results.length > 0) {
-                    const label = LAYER_DESCRIPTIONS[layer];
+                    const fileLayer = layer as FileLayer;
+                    const tableName = getTableForFileLayer(fileLayer);
+                    const label = LAYER_DESCRIPTIONS[fileLayer];
                     contextSections.push(formatFileSummary(tableName, results.length, label));
                 }
-            } catch {
-                // Silently skip
+            } else {
+                const layerKey = layer as MemoryLayer | FileLayer;
+                const label = LAYER_DESCRIPTIONS[layerKey];
+                contextSections.push(formatMemoryResults(results, label));
             }
         }
 

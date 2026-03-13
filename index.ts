@@ -21,12 +21,23 @@ import type { RerankConfig } from "./src/search/reranker";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
- * event.prompt 可能包含大量元数据（Conversation info、Sender info 等），
+ * event.prompt 包含大量元数据（Conversation info、Sender info 等），
  * 真正的用户消息在最后一行，格式为 "sender_id: 实际消息"。
- * 也可以从 event.messages 中获取最后一条 user 消息。
  */
 function extractUserQuery(event: { prompt: string; messages?: Array<{ role: string; content: any }> }): string | undefined {
-    // 优先从 messages 数组中提取最后一条 user 消息
+    // 优先从 prompt 最后一行提取（格式稳定：ou_xxxx: 实际消息）
+    const prompt = event.prompt;
+    if (prompt) {
+        const lines = prompt.trim().split("\n");
+        const lastLine = lines[lines.length - 1]?.trim();
+        if (lastLine) {
+            // 匹配 "ou_xxxx: 实际消息" 或 "[xxx] sender_id: 实际消息" 格式
+            const match = lastLine.match(/^(?:\[.*?\]\s*)?[\w]+:\s*(.+)$/);
+            if (match && match[1]) return match[1].trim();
+        }
+    }
+
+    // 回退：从 messages 数组中提取最后一条 user 消息
     if (event.messages && Array.isArray(event.messages)) {
         for (let i = event.messages.length - 1; i >= 0; i--) {
             const msg = event.messages[i];
@@ -37,17 +48,7 @@ function extractUserQuery(event: { prompt: string; messages?: Array<{ role: stri
         }
     }
 
-    // 回退：从 prompt 末尾提取（格式为 "sender_id: 实际消息"）
-    const prompt = event.prompt;
-    if (!prompt) return undefined;
-
-    const lines = prompt.trim().split("\n");
-    const lastLine = lines[lines.length - 1]?.trim();
-    if (!lastLine) return undefined;
-
-    // 匹配 "ou_xxxx: 实际消息" 格式
-    const match = lastLine.match(/^[\w]+:\s*(.+)$/);
-    return match ? match[1].trim() : lastLine;
+    return undefined;
 }
 
 /**
