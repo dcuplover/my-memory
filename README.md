@@ -87,7 +87,7 @@ npm install
 | **态度层** | `memory_attitude` | 我对某事物的态度/看法 | "我不喜欢 Java 的冗长语法" |
 | **事实层** | `memory_fact` | 某事物是什么（概念定义） | "LanceDB 是一个嵌入式向量数据库" |
 | **客观知识层** | `memory_knowledge` | 什么情景下该怎么做/不能做 | "使用 Python 时不要用可变对象作默认值" |
-| **主观选择层** | `memory_preference` | 多选项中的主观倾向 | "HTTP 客户端我倾向选择 axios 而非 fetch" |
+| **价值观选择层** | `memory_preference` | 面对多条路径时基于价值观的取舍 | "选择更复杂但稳定的方案，而非简单但临时的快速修复" |
 
 ### 文件层
 
@@ -123,6 +123,8 @@ npm install
 | `/add_document` | 添加文档到文件库 | `/add_document 文档正文内容...` |
 | `/query_diary` | 直接查询日记本 | `/query_diary 上次实验的结果` |
 | `/query_document` | 直接查询文件库 | `/query_document LanceDB 使用方法` |
+| `/extract_diary_memory` | 从日记中提取四层记忆 | `/extract_diary_memory 2024-01-15` |
+| `/extract_document_memory` | 从文档中提取四层记忆 | `/extract_document_memory 文档内容...` |
 
 ---
 
@@ -137,6 +139,8 @@ npm install
 | `add_document` | 当你说"索引这个文档" |
 | `query_diary` | 当你说"搜索我的日记" |
 | `query_document` | 当你说"查找文档" |
+| `extract_diary_memory` | 当你说"从日记里提取记忆"、"整理日记中的知识" |
+| `extract_document_memory` | 当你说"从这篇文档提取记忆"、"整理文档中的知识" |
 
 ---
 

@@ -1,5 +1,6 @@
 import { queryMemory } from "./src/memory/query";
 import { addMemory, formatAddResult } from "./src/memory/add";
+import { extractMemoryFromDiary, extractMemoryFromDocument } from "./src/memory/extract_from_source";
 import { addDiary } from "./src/document/diary";
 import { addDocument } from "./src/document/file";
 import { ensureAllTables } from "./src/db/schema";
@@ -229,6 +230,45 @@ export default function (api: any) {
         },
     });
 
+    // /extract_diary_memory — 从日记中提取四层记忆
+    api.registerCommand({
+        name: "extract_diary_memory",
+        description: "从已存储的日记中提取四层记忆（态度/事实/知识/价值观选择），支持按日期、关键词或全量提取",
+        async handler(ctx: any) {
+            try {
+                const query = ctx.prompt?.trim() || ctx.args?.trim();
+                const date = ctx.date;
+                const sourceId = ctx.sourceId || ctx.source_id;
+
+                const result = await extractMemoryFromDiary(api, { query: query || undefined, date, sourceId });
+                return { text: formatAddResult(result) };
+            } catch (err) {
+                return { text: `从日记提取记忆失败: ${String(err)}` };
+            }
+        },
+    });
+
+    // /extract_document_memory — 从文档中提取四层记忆
+    api.registerCommand({
+        name: "extract_document_memory",
+        description: "从已存储的文档或直接传入的文本中提取四层记忆（态度/事实/知识/价值观选择）",
+        async handler(ctx: any) {
+            try {
+                const content = ctx.prompt?.trim() || ctx.args?.trim();
+                const filePath = ctx.filePath || ctx.file_path;
+
+                const result = await extractMemoryFromDocument(api, {
+                    content: content || undefined,
+                    filePath,
+                    query: !content ? filePath : undefined,
+                });
+                return { text: formatAddResult(result) };
+            } catch (err) {
+                return { text: `从文档提取记忆失败: ${String(err)}` };
+            }
+        },
+    });
+
     // ═══════════════════════════════════════════════════════════
     // 3. AI Tools (registerTool)
     // ═══════════════════════════════════════════════════════════
@@ -414,6 +454,76 @@ export default function (api: any) {
                 return { content: [{ type: "text", text: formatted || "未找到相关文档。" }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `查询文件库失败: ${String(err)}` }] };
+            }
+        },
+    });
+
+    // extract_diary_memory tool
+    api.registerTool({
+        name: "extract_diary_memory",
+        description: "从已存储的日记中全面提取四层记忆（态度、事实、知识、价值观选择）。对日记内容进行分段提取，确保不遗漏，然后逐条与现有记忆比对决策（新增/更新/删除）。",
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "按关键词/语义搜索日记，留空则提取全部日记",
+                },
+                date: {
+                    type: "string",
+                    description: "按日期筛选日记，格式 YYYY-MM-DD",
+                },
+                source_id: {
+                    type: "string",
+                    description: "指定某篇日记的 source_id",
+                },
+            },
+        },
+        async execute(_id: string, params: { query?: string; date?: string; source_id?: string }) {
+            try {
+                const result = await extractMemoryFromDiary(api, {
+                    query: params.query,
+                    date: params.date,
+                    sourceId: params.source_id,
+                });
+                return { content: [{ type: "text", text: formatAddResult(result) }] };
+            } catch (err) {
+                return { content: [{ type: "text", text: `从日记提取记忆失败: ${String(err)}` }] };
+            }
+        },
+    });
+
+    // extract_document_memory tool
+    api.registerTool({
+        name: "extract_document_memory",
+        description: "从文档中全面提取四层记忆（态度、事实、知识、价值观选择）。支持传入文档内容、按文件路径查找、或按关键词搜索已有文档。分段提取确保不遗漏，逐条决策。",
+        parameters: {
+            type: "object",
+            properties: {
+                content: {
+                    type: "string",
+                    description: "直接传入文档内容",
+                },
+                file_path: {
+                    type: "string",
+                    description: "按文件路径查找已存储的文档",
+                },
+                query: {
+                    type: "string",
+                    description: "按关键词/语义搜索已存储的文档",
+                },
+            },
+        },
+        async execute(_id: string, params: { content?: string; file_path?: string; query?: string }) {
+            try {
+                const result = await extractMemoryFromDocument(api, {
+                    content: params.content,
+                    filePath: params.file_path,
+                    query: params.query,
+                });
+                return { content: [{ type: "text", text: formatAddResult(result) }] };
+            } catch (err) {
+                return { content: [{ type: "text", text: `从文档提取记忆失败: ${String(err)}` }] };
             }
         },
     });

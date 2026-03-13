@@ -121,7 +121,7 @@ export function formatAddResult(result: AddMemoryResult): string {
         ["attitudes", "态度层"],
         ["facts", "事实层"],
         ["knowledge", "客观知识层"],
-        ["preferences", "主观选择层"],
+        ["preferences", "价值观选择层"],
     ];
 
     for (const [key, label] of layerEntries) {
