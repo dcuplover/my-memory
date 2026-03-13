@@ -30,6 +30,7 @@ export default function (api: any) {
 
         try {
             const context = await queryMemory(api, event.prompt);
+            console.log("Queried memory context:", context);
             if (!context) return;
             return { prependContext: context };
         } catch (err) {
