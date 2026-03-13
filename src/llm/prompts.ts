@@ -23,7 +23,7 @@ ${layerList}
 5. 如果用户问的是态度/看法/感受相关，选择 attitude 层
 6. 如果用户问的是概念/定义/是什么，选择 fact 层
 7. 如果用户问的是怎么做/该不该做/最佳实践，选择 knowledge 层
-8. 如果用户问的是选择/偏好/用哪个，选择 preference 层
+8. 如果用户问的涉及取舍/权衡/价值观倾向/优先级选择，选择 preference 层
 9. 如果难以判断具体类型，同时选择所有四个记忆层（attitude, fact, knowledge, preference）
 
 仅输出 JSON，不要输出其他内容：
@@ -58,8 +58,8 @@ export function buildMemoryExtractionMessages(inputText: string): ChatMessage[] 
 3. **客观知识 (knowledge)**: 在什么情景下应该怎么做、不能怎么做
    - 格式：{ "scenario": "情景描述", "action": "应该/不应该做什么", "content": "原始相关内容摘要" }
 
-4. **主观选择 (preferences)**: 面对多个选项时的主观倾向
-   - 格式：{ "scenario": "选择情景", "options": "可选项描述", "preferred": "倾向选择", "content": "原始相关内容摘要" }
+4. **价值观选择 (preferences)**: 面对多条路径/方案时，基于价值观的决策倾向。体现在取舍和权衡中——例如更看重稳定性还是速度，更看重长远收益还是眼前效果
+   - 格式：{ "scenario": "决策情景", "options": "可选路径/方案", "preferred": "倾向选择及其价值观依据", "content": "原始相关内容摘要" }
 
 规则：
 - 仔细分析文本，提取所有可发现的记忆

@@ -26,7 +26,7 @@ import { startTracker, clearTracker } from "../tracker";
 const DIARY_KEYWORDS = /日记|日志|diary|journal/i;
 const DOCUMENT_KEYWORDS = /文档|文件|文件库|document|file/i;
 const ATTITUDE_KEYWORDS = /态度|看法|感受|觉得|认为|怎么看|感觉|讨厌|喜欢|喜不喜欢|opinion|attitude|feel/i;
-const PREFERENCE_KEYWORDS = /偏好|选择|倾向|用哪个|prefer|哪一个|推荐|选哪|更喜欢|最喜欢|爱吃|喜欢吃|喜欢喝|喜欢用|喜欢看|喜欢听|爱好/i;
+const PREFERENCE_KEYWORDS = /偏好|价值观|倾向|取舍|权衡|优先|选择方案|哪条路|哪种方式|稳定还是|简单还是|长远|眼前|trade.?off|prefer|priority|principle/i;
 const KNOWLEDGE_KEYWORDS = /怎么做|该不该|最佳实践|如何|方法|步骤|how to|best practice|应该|不应该|规则/i;
 const FACT_KEYWORDS = /是什么|什么是|定义|概念|是谁|哪里|什么时候|fact|what is|who is/i;
 

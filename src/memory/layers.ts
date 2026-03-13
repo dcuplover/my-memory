@@ -29,7 +29,7 @@ export const LAYER_DESCRIPTIONS: Record<MemoryLayer | FileLayer, string> = {
     [MemoryLayer.Attitude]: "态度层 — 我对某事物的态度、看法、情感倾向",
     [MemoryLayer.Fact]: "事实层 — 某事物是什么，概念定义",
     [MemoryLayer.Knowledge]: "客观知识层 — 什么情景下要怎么做、不能怎么做",
-    [MemoryLayer.Preference]: "主观选择层 — 多选项中我主观倾向选哪一项",
+    [MemoryLayer.Preference]: "价值观选择层 — 面对多条路径/方案时，基于价值观倾向选择哪一条（如稳定优先 vs 快速解决）",
     [FileLayer.Diary]: "日记本层 — 日记全文检索",
     [FileLayer.Document]: "文件库层 — 文档摘要检索",
 };
