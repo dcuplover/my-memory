@@ -1,12 +1,20 @@
 declare module "fs" {
     export function readFileSync(path: string, encoding: string): string;
     export function existsSync(path: string): boolean;
+    export function readdirSync(path: string, options?: { withFileTypes: true }): Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
+    export function statSync(path: string): { mtimeMs: number; size: number };
+    export function watch(
+        path: string,
+        options: { recursive?: boolean },
+        listener: (eventType: string, filename: string | null) => void,
+    ): { close(): void };
 }
 
 declare module "path" {
     export function resolve(...paths: string[]): string;
     export function basename(path: string, ext?: string): string;
     export function extname(path: string): string;
+    export function join(...paths: string[]): string;
 }
 
 declare module "@lancedb/lancedb" {

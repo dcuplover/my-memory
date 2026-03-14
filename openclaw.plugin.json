@@ -113,6 +113,49 @@
             "recencyHalfLifeDays": { "type": "number", "minimum": 1 }
           }
         }
+      },
+      "watchPaths": {
+        "type": "array",
+        "description": "文件监听路径配置，监控目录中的文件新增/更新后自动导入并提取记忆",
+        "items": {
+          "type": "object",
+          "required": ["path", "type"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "要监听的目录路径（绝对路径）"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["diary", "document"],
+              "description": "文件类型：diary（日记）或 document（文档）"
+            },
+            "trigger": {
+              "type": "string",
+              "enum": ["immediate", "debounce", "scheduled"],
+              "description": "触发模式：immediate（立即）、debounce（去抖，默认）、scheduled（定时扫描）"
+            },
+            "debounceSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "debounce 模式下的等待秒数，默认 30"
+            },
+            "intervalMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "scheduled 模式下的扫描间隔（分钟），默认 60"
+            },
+            "extensions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "监听的文件后缀，默认 [\".md\", \".txt\"]"
+            },
+            "autoExtract": {
+              "type": "boolean",
+              "description": "存储后是否自动提取四层记忆，默认 true"
+            }
+          }
+        }
       }
     },
     "required": ["lanceDbPath", "embedBaseUrl", "embedModel", "embedApiKey", "llmBaseUrl", "llmModel", "llmApiKey"]

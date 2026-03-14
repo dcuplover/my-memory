@@ -11,6 +11,7 @@ export const TABLE_NAMES = {
     PREFERENCE: "memory_preference",
     DIARY: "file_diary",
     DOCUMENT: "file_document",
+    WATCH_STATE: "file_watch_state",
 } as const;
 
 export type TableName = (typeof TABLE_NAMES)[keyof typeof TABLE_NAMES];
@@ -87,6 +88,18 @@ export type PluginConfig = {
     chunkOverlap?: number;
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
+    watchPaths?: WatchPathConfig[];
+};
+
+// ─── Watch Path Config ───
+export type WatchPathConfig = {
+    path: string;
+    type: "diary" | "document";
+    trigger?: "immediate" | "debounce" | "scheduled";
+    debounceSeconds?: number;
+    intervalMinutes?: number;
+    extensions?: string[];
+    autoExtract?: boolean;
 };
 
 // ─── Config Reader ───

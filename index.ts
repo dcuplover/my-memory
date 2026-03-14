@@ -22,6 +22,7 @@ import {
 import { LAYER_DESCRIPTIONS, FileLayer, getTableForFileLayer, MemoryLayer, ALL_MEMORY_LAYERS, getTableForMemoryLayer } from "./src/memory/layers";
 import type { EmbedConfig } from "./src/embedding";
 import type { RerankConfig } from "./src/search/reranker";
+import { FileWatcherService } from "./src/watcher";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
@@ -741,4 +742,63 @@ export default function (api: any) {
             api.logger?.warn?.(`Failed to initialize LanceDB tables: ${String(err)}`);
         });
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // 5. File Watcher — 监听目录自动导入 + 提取记忆
+    // ═══════════════════════════════════════════════════════════
+
+    let fileWatcher: FileWatcherService | null = null;
+
+    const cfg = getPluginConfig(api);
+    if (cfg.watchPaths && cfg.watchPaths.length > 0) {
+        fileWatcher = new FileWatcherService(api);
+        fileWatcher.start(cfg.watchPaths);
+    }
+
+    // ─── /watch_status 命令 ───
+
+    api.registerCommand("watch_status", {
+        description: "查看文件监听服务状态",
+        execute: async () => {
+            if (!fileWatcher) {
+                return "文件监听服务未启动。请在插件配置中设置 watchPaths 后重启。";
+            }
+            const status = fileWatcher.getStatus();
+            if (status.watching === 0) {
+                return "文件监听服务已启动，但没有活跃的监听路径。";
+            }
+            const lines = [`文件监听服务运行中，共监听 ${status.watching} 个路径：`, ""];
+            for (const p of status.paths) {
+                lines.push(`  • ${p}`);
+            }
+            return lines.join("\n");
+        },
+    });
+
+    // ─── /watch_stop 命令 ───
+
+    api.registerCommand("watch_stop", {
+        description: "停止文件监听服务",
+        execute: async () => {
+            if (!fileWatcher) return "文件监听服务未启动。";
+            fileWatcher.stop();
+            return "文件监听服务已停止。";
+        },
+    });
+
+    // ─── /watch_start 命令 ───
+
+    api.registerCommand("watch_start", {
+        description: "启动文件监听服务（使用配置中的 watchPaths）",
+        execute: async () => {
+            const currentCfg = getPluginConfig(api);
+            if (!currentCfg.watchPaths || currentCfg.watchPaths.length === 0) {
+                return "未配置 watchPaths，请在插件配置中添加监听路径。";
+            }
+            if (fileWatcher) fileWatcher.stop();
+            fileWatcher = new FileWatcherService(api);
+            fileWatcher.start(currentCfg.watchPaths);
+            return `文件监听服务已启动，监听 ${currentCfg.watchPaths.length} 个路径。`;
+        },
+    });
 }
