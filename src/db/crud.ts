@@ -1,5 +1,6 @@
 import type { LanceDbRow } from "@lancedb/lancedb";
 import { ensureTable, getTable } from "./schema";
+import { DEFAULT_EMBED_DIMENSIONS } from "../config";
 
 // ─── Add records ───
 
@@ -22,7 +23,8 @@ export async function getRecordById(
     id: string,
 ): Promise<LanceDbRow | undefined> {
     const table = await getTable(dbPath, tableName);
-    const rows = await table.search("").where(`id = '${escapeSql(id)}'`).limit(1).toArray();
+    const zeroVec = new Array(DEFAULT_EMBED_DIMENSIONS).fill(0);
+    const rows = await table.search(zeroVec).where(`id = '${escapeSql(id)}'`).limit(1).toArray();
     return rows[0];
 }
 

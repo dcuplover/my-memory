@@ -236,12 +236,13 @@ async function fetchDiaryContent(
     dims: number,
 ): Promise<FetchDiaryResult> {
     const table = await ensureTable(dbPath, TABLE_NAMES.DIARY, dims);
+    const zeroVec = new Array(dims).fill(0);
     const onlyNew = !options.force;
 
     if (options.sourceId) {
         // 按 source_id 获取某篇日记的所有 chunk
         const rows = await table
-            .search("")
+            .search(zeroVec)
             .where(`source_id = '${options.sourceId.replace(/'/g, "''")}'`)
             .limit(1000)
             .toArray();
@@ -257,7 +258,7 @@ async function fetchDiaryContent(
         let filter = `date = '${options.date.replace(/'/g, "''")}'`;
         if (onlyNew) filter += ` AND extracted = false`;
         const rows = await table
-            .search("")
+            .search(zeroVec)
             .where(filter)
             .limit(1000)
             .toArray();
@@ -289,9 +290,9 @@ async function fetchDiaryContent(
     // 默认：获取未提取过的日记（force=true 时获取全部）
     let rows: any[];
     if (onlyNew) {
-        rows = await table.search("").where("extracted = false").limit(10000).toArray();
+        rows = await table.search(zeroVec).where("extracted = false").limit(10000).toArray();
     } else {
-        rows = await table.search("").limit(10000).toArray();
+        rows = await table.search(zeroVec).limit(10000).toArray();
     }
     rows.sort((a: any, b: any) => {
         const dateCompare = String(a.date ?? "").localeCompare(String(b.date ?? ""));
@@ -376,10 +377,11 @@ async function fetchDocumentContent(
     dims: number,
 ): Promise<string> {
     const table = await ensureTable(dbPath, TABLE_NAMES.DOCUMENT, dims);
+    const zeroVec = new Array(dims).fill(0);
 
     if (options.filePath) {
         const rows = await table
-            .search("")
+            .search(zeroVec)
             .where(`file_path = '${options.filePath.replace(/'/g, "''")}'`)
             .limit(100)
             .toArray();
@@ -401,7 +403,7 @@ async function fetchDocumentContent(
     }
 
     // 默认：全部文档
-    const rows = await table.search("").limit(10000).toArray();
+    const rows = await table.search(zeroVec).limit(10000).toArray();
     return rows.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`).join("\n\n");
 }
 
