@@ -4,7 +4,7 @@ import { addDiary } from "../document/diary";
 import { addDocument } from "../document/file";
 import { extractMemoryFromDiary, extractMemoryFromDocument } from "../memory/extract_from_source";
 import { ensureTable } from "../db/schema";
-import { TABLE_NAMES, getLanceDbPath, type WatchPathConfig } from "../config";
+import { TABLE_NAMES, getLanceDbPath, getPluginConfig, DEFAULT_EMBED_DIMENSIONS, type WatchPathConfig } from "../config";
 
 // ─── Types ───
 
@@ -76,8 +76,10 @@ export class FileWatcherService {
         const dbPath = getLanceDbPath(this.api);
         if (!dbPath) return null;
         try {
-            const table = await ensureTable(dbPath, TABLE_NAMES.WATCH_STATE);
-            const rows = await table.search("").where(`filePath = '${filePath.replace(/'/g, "''")}'`).limit(1).toArray();
+            const dims = getPluginConfig(this.api).embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
+            const table = await ensureTable(dbPath, TABLE_NAMES.WATCH_STATE, dims);
+            const zeroVec = new Array(dims).fill(0);
+            const rows = await table.search(zeroVec).where(`filePath = '${filePath.replace(/'/g, "''")}'`).limit(1).toArray();
             if (rows.length === 0) return null;
             return { mtimeMs: Number(rows[0].mtimeMs ?? 0), size: Number(rows[0].size ?? 0) };
         } catch {
@@ -89,9 +91,11 @@ export class FileWatcherService {
         const dbPath = getLanceDbPath(this.api);
         if (!dbPath) return;
         try {
-            const table = await ensureTable(dbPath, TABLE_NAMES.WATCH_STATE);
+            const dims = getPluginConfig(this.api).embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
+            const table = await ensureTable(dbPath, TABLE_NAMES.WATCH_STATE, dims);
             const escapedPath = filePath.replace(/'/g, "''");
-            const existing = await table.search("").where(`filePath = '${escapedPath}'`).limit(1).toArray();
+            const zeroVec = new Array(dims).fill(0);
+            const existing = await table.search(zeroVec).where(`filePath = '${escapedPath}'`).limit(1).toArray();
             const now = new Date().toISOString();
 
             if (existing.length > 0) {
@@ -101,7 +105,7 @@ export class FileWatcherService {
                 });
             } else {
                 const id = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                await table.add([{ id, filePath, type, mtimeMs, size, processedAt: now, status: "processed" }]);
+                await table.add([{ id, filePath, type, mtimeMs, size, processedAt: now, status: "processed", vector: zeroVec }]);
             }
         } catch (err) {
             this.log(`保存文件状态失败 ${filePath}: ${String(err)}`);

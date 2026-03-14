@@ -736,8 +736,8 @@ export default function (api: any) {
 
     const dbPath = getLanceDbPath(api);
     if (dbPath) {
-        const cfg = getPluginConfig(api);
-        const dims = cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
+        const initCfg = getPluginConfig(api);
+        const dims = initCfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
         ensureAllTables(dbPath, dims).catch((err) => {
             api.logger?.warn?.(`Failed to initialize LanceDB tables: ${String(err)}`);
         });
@@ -749,10 +749,14 @@ export default function (api: any) {
 
     let fileWatcher: FileWatcherService | null = null;
 
-    const cfg = getPluginConfig(api);
-    if (cfg.watchPaths && cfg.watchPaths.length > 0) {
-        fileWatcher = new FileWatcherService(api);
-        fileWatcher.start(cfg.watchPaths);
+    try {
+        const watchCfg = getPluginConfig(api);
+        if (watchCfg.watchPaths && watchCfg.watchPaths.length > 0) {
+            fileWatcher = new FileWatcherService(api);
+            fileWatcher.start(watchCfg.watchPaths);
+        }
+    } catch (err) {
+        api.logger?.warn?.(`Failed to start file watcher: ${String(err)}`);
     }
 
     // ─── /watch_status 命令 ───

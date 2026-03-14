@@ -58,7 +58,7 @@ const SCHEMA_SEEDS: Record<string, (dims: number) => LanceDbRow> = {
         credibility: 0,
         createdAt: "",
     }),
-    [TABLE_NAMES.WATCH_STATE]: (_d) => ({
+    [TABLE_NAMES.WATCH_STATE]: (d) => ({
         id: "__seed__",
         filePath: "",
         type: "",
@@ -66,6 +66,7 @@ const SCHEMA_SEEDS: Record<string, (dims: number) => LanceDbRow> = {
         size: 0,
         processedAt: "",
         status: "",
+        vector: makeVector(d),
     }),
 };
 
