@@ -39,7 +39,7 @@ npm install
 
 ### 3. 启动
 
-插件加载后会自动初始化 6 张 LanceDB 表，无需手动建表。
+插件加载后会自动初始化 7 张 LanceDB 表，无需手动建表。
 
 ---
 
@@ -206,6 +206,83 @@ LLM 决策：ADD / UPDATE / DELETE / NONE
 
 ---
 
+## 文件监听模式
+
+插件支持后台监听指定目录，当文件新增或变更时自动导入并提取记忆。文件处理状态持久化在 LanceDB `file_watch_state` 表中，重启后不会重复处理已导入的未变更文件。
+
+### 配置
+
+在插件配置中添加 `watchPaths` 数组：
+
+```json
+{
+  "config": {
+    "watchPaths": [
+      {
+        "path": "/path/to/diary-folder",
+        "type": "diary",
+        "trigger": "debounce",
+        "debounceSeconds": 30,
+        "extensions": [".md", ".txt"],
+        "autoExtract": true
+      },
+      {
+        "path": "/path/to/docs-folder",
+        "type": "document",
+        "trigger": "scheduled",
+        "intervalMinutes": 60
+      }
+    ]
+  }
+}
+```
+
+### 配置项
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `path` | string | ✅ | — | 监听的目录路径 |
+| `type` | `"diary"` \| `"document"` | ✅ | — | 文件类型：日记或文档 |
+| `trigger` | `"immediate"` \| `"debounce"` \| `"scheduled"` | — | `"debounce"` | 触发模式 |
+| `debounceSeconds` | number | — | 30 | debounce 模式下的去抖延迟（秒） |
+| `intervalMinutes` | number | — | 60 | scheduled 模式下的扫描间隔（分钟） |
+| `extensions` | string[] | — | `[".md", ".txt"]` | 监听的文件后缀 |
+| `autoExtract` | boolean | — | `true` | 导入后是否自动提取四层记忆 |
+
+### 三种触发模式
+
+| 模式 | 行为 |
+|------|------|
+| **immediate** | 文件变更后约 500ms 立即处理 |
+| **debounce** | 文件变更后等待 N 秒（默认 30s）无新变更再处理，适合频繁编辑的场景 |
+| **scheduled** | 不监听实时变更，按固定间隔扫描目录，适合批量导入场景 |
+
+### 处理流程
+
+```
+文件变更检测
+  ↓
+对比持久化状态（mtime + size）
+  ↓ 有变化
+读取文件内容
+  ↓
+按 type 分流：
+  diary    → addDiary → extractMemoryFromDiary（可选）
+  document → addDocument → extractMemoryFromDocument（可选）
+  ↓
+更新 file_watch_state 持久化状态
+```
+
+### 管理命令
+
+| 命令 | 说明 |
+|------|------|
+| `/watch_status` | 查看当前监听状态和路径 |
+| `/watch_start` | 手动启动监听服务 |
+| `/watch_stop` | 手动停止监听服务 |
+
+---
+
 ## 目录结构
 
 ```
@@ -221,7 +298,7 @@ my-memory/
     ├── db/
     │   ├── connection.ts     # LanceDB 连接（单例）
     │   ├── crud.ts           # 增删改查
-    │   └── schema.ts         # 6 张表定义 + 建表/索引
+    │   └── schema.ts         # 7 张表定义 + 建表/索引
     ├── document/
     │   ├── chunker.ts        # 滑动窗口切分
     │   ├── diary.ts          # 日记本处理
@@ -235,11 +312,14 @@ my-memory/
     ├── memory/
     │   ├── add.ts            # 记忆添加主逻辑
     │   ├── extract.ts        # 四层记忆提取
+    │   ├── extract_from_source.ts  # 从日记/文档批量提取
     │   ├── layers.ts         # 层级枚举
     │   └── query.ts          # 记忆查询主逻辑
-    └── search/
-        ├── hybrid.ts         # 混合检索
-        ├── keyword.ts        # BM25 关键词检索
-        ├── reranker.ts       # Rerank API
-        └── vector.ts         # 向量检索
+    ├── search/
+    │   ├── hybrid.ts         # 混合检索
+    │   ├── keyword.ts        # BM25 关键词检索
+    │   ├── reranker.ts       # Rerank API
+    │   └── vector.ts         # 向量检索
+    └── watcher/
+        └── index.ts          # 文件监听服务
 ```

@@ -757,48 +757,51 @@ export default function (api: any) {
 
     // ─── /watch_status 命令 ───
 
-    api.registerCommand("watch_status", {
+    api.registerCommand({
+        name: "watch_status",
         description: "查看文件监听服务状态",
-        execute: async () => {
+        async handler(ctx: any) {
             if (!fileWatcher) {
-                return "文件监听服务未启动。请在插件配置中设置 watchPaths 后重启。";
+                return { text: "文件监听服务未启动。请在插件配置中设置 watchPaths 后重启。" };
             }
             const status = fileWatcher.getStatus();
             if (status.watching === 0) {
-                return "文件监听服务已启动，但没有活跃的监听路径。";
+                return { text: "文件监听服务已启动，但没有活跃的监听路径。" };
             }
             const lines = [`文件监听服务运行中，共监听 ${status.watching} 个路径：`, ""];
             for (const p of status.paths) {
                 lines.push(`  • ${p}`);
             }
-            return lines.join("\n");
+            return { text: lines.join("\n") };
         },
     });
 
     // ─── /watch_stop 命令 ───
 
-    api.registerCommand("watch_stop", {
+    api.registerCommand({
+        name: "watch_stop",
         description: "停止文件监听服务",
-        execute: async () => {
-            if (!fileWatcher) return "文件监听服务未启动。";
+        async handler(ctx: any) {
+            if (!fileWatcher) return { text: "文件监听服务未启动。" };
             fileWatcher.stop();
-            return "文件监听服务已停止。";
+            return { text: "文件监听服务已停止。" };
         },
     });
 
     // ─── /watch_start 命令 ───
 
-    api.registerCommand("watch_start", {
+    api.registerCommand({
+        name: "watch_start",
         description: "启动文件监听服务（使用配置中的 watchPaths）",
-        execute: async () => {
+        async handler(ctx: any) {
             const currentCfg = getPluginConfig(api);
             if (!currentCfg.watchPaths || currentCfg.watchPaths.length === 0) {
-                return "未配置 watchPaths，请在插件配置中添加监听路径。";
+                return { text: "未配置 watchPaths，请在插件配置中添加监听路径。" };
             }
             if (fileWatcher) fileWatcher.stop();
             fileWatcher = new FileWatcherService(api);
             fileWatcher.start(currentCfg.watchPaths);
-            return `文件监听服务已启动，监听 ${currentCfg.watchPaths.length} 个路径。`;
+            return { text: `文件监听服务已启动，监听 ${currentCfg.watchPaths.length} 个路径。` };
         },
     });
 }
