@@ -84,6 +84,78 @@ const FTS_COLUMNS_MAP: Record<string, string[]> = {
 // ─── Track which tables have had FTS indexes ensured this session ───
 
 const ftsEnsured = new Set<string>();
+const migrationChecked = new Set<string>();
+
+// ─── Schema migration: detect missing columns and rebuild table ───
+
+async function migrateTableIfNeeded(
+    conn: LanceDbConnection,
+    table: LanceDbTable,
+    tableName: string,
+    dims: number,
+): Promise<LanceDbTable> {
+    const cacheKey = `${tableName}`;
+    if (migrationChecked.has(cacheKey)) return table;
+
+    const seedFn = SCHEMA_SEEDS[tableName];
+    if (!seedFn) return table;
+
+    const seedRow = seedFn(dims);
+
+    // Try adding the seed row — if schema is up-to-date, it will succeed
+    try {
+        await table.add([seedRow]);
+        await table.delete(`id = '__seed__'`);
+        migrationChecked.add(cacheKey);
+        return table;
+    } catch (err) {
+        const msg = String(err);
+        if (!msg.includes("not in schema")) {
+            // Different error — rethrow
+            migrationChecked.add(cacheKey);
+            return table;
+        }
+    }
+
+    // Schema mismatch detected — migrate
+    // 1. Read all existing rows
+    const zeroVec = new Array(dims).fill(0);
+    let existingRows: LanceDbRow[];
+    try {
+        existingRows = await table.search(zeroVec).limit(100000).toArray();
+    } catch {
+        existingRows = [];
+    }
+
+    // 2. Drop old table
+    await conn.dropTable(tableName);
+
+    // 3. Create new table with full schema
+    const newTable = await conn.createTable(tableName, [seedRow]);
+    try {
+        await newTable.delete(`id = '__seed__'`);
+    } catch { /* non-critical */ }
+
+    // 4. Re-insert old rows with default values for missing columns
+    if (existingRows.length > 0) {
+        const migratedRows = existingRows.map((row) => {
+            const migrated: LanceDbRow = {};
+            for (const key of Object.keys(seedRow)) {
+                migrated[key] = key in row ? row[key] : seedRow[key];
+            }
+            return migrated;
+        });
+        await newTable.add(migratedRows);
+    }
+
+    // Clear FTS cache so indexes are rebuilt
+    for (const key of ftsEnsured) {
+        if (key.endsWith(`::${tableName}`)) ftsEnsured.delete(key);
+    }
+
+    migrationChecked.add(cacheKey);
+    return newTable;
+}
 
 // ─── Ensure table exists ───
 
@@ -99,6 +171,8 @@ export async function ensureTable(
 
     if (existing.includes(tableName)) {
         table = await conn.openTable(tableName);
+        // Check for schema migration (new columns added since table creation)
+        table = await migrateTableIfNeeded(conn, table, tableName, dims);
     } else {
         const seedFn = SCHEMA_SEEDS[tableName];
         if (!seedFn) {
