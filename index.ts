@@ -146,8 +146,9 @@ async function listMemoryImpl(api: any, input: string): Promise<string> {
             });
             rows = results;
         } else {
-            // 无关键词：列出最近的记忆
-            rows = await table.search("").limit(keyword ? limit : 20).toArray();
+            // 无关键词：用零向量搜索列出最近的记忆（避免触发 FTS）
+            const zeroVec = new Array(dims).fill(0);
+            rows = await table.search(zeroVec).limit(20).toArray();
             // 按创建时间倒序
             rows.sort((a: any, b: any) =>
                 String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
