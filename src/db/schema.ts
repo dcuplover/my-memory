@@ -88,6 +88,19 @@ const migrationChecked = new Set<string>();
 
 // ─── Schema migration: detect missing columns and rebuild table ───
 
+/**
+ * Convert a LanceDB vector result (Float32Array / object with metadata) back to plain number[].
+ */
+function toPlainVector(v: unknown, dims: number): number[] {
+    if (!v) return new Array(dims).fill(0);
+    if (Array.isArray(v)) return v;
+    // Float32Array or similar typed array
+    if (typeof v === "object" && "length" in (v as any)) {
+        return Array.from(v as ArrayLike<number>);
+    }
+    return new Array(dims).fill(0);
+}
+
 async function migrateTableIfNeeded(
     conn: LanceDbConnection,
     table: LanceDbTable,
@@ -101,6 +114,7 @@ async function migrateTableIfNeeded(
     if (!seedFn) return table;
 
     const seedRow = seedFn(dims);
+    const seedKeys = new Set(Object.keys(seedRow));
 
     // Try adding the seed row — if schema is up-to-date, it will succeed
     try {
@@ -111,7 +125,7 @@ async function migrateTableIfNeeded(
     } catch (err) {
         const msg = String(err);
         if (!msg.includes("not in schema")) {
-            // Different error — rethrow
+            // Different error — skip migration
             migrationChecked.add(cacheKey);
             return table;
         }
@@ -128,20 +142,39 @@ async function migrateTableIfNeeded(
     }
 
     // 2. Drop old table
-    await conn.dropTable(tableName);
+    try {
+        await conn.dropTable(tableName);
+    } catch {
+        // Table may already have been dropped by a concurrent call
+    }
 
     // 3. Create new table with full schema
-    const newTable = await conn.createTable(tableName, [seedRow]);
+    let newTable: LanceDbTable;
+    try {
+        newTable = await conn.createTable(tableName, [seedRow]);
+    } catch {
+        // Table might have been recreated by a concurrent call
+        newTable = await conn.openTable(tableName);
+        migrationChecked.add(cacheKey);
+        return newTable;
+    }
+
     try {
         await newTable.delete(`id = '__seed__'`);
     } catch { /* non-critical */ }
 
-    // 4. Re-insert old rows with default values for missing columns
+    // 4. Re-insert old rows: only copy seed-defined fields, convert vectors
     if (existingRows.length > 0) {
         const migratedRows = existingRows.map((row) => {
             const migrated: LanceDbRow = {};
-            for (const key of Object.keys(seedRow)) {
-                migrated[key] = key in row ? row[key] : seedRow[key];
+            for (const key of seedKeys) {
+                if (key === "vector") {
+                    migrated[key] = toPlainVector(row[key], dims);
+                } else if (key in row) {
+                    migrated[key] = row[key];
+                } else {
+                    migrated[key] = seedRow[key];
+                }
             }
             return migrated;
         });
