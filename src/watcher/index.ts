@@ -79,7 +79,7 @@ export class FileWatcherService {
             const dims = getPluginConfig(this.api).embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
             const table = await ensureTable(dbPath, TABLE_NAMES.WATCH_STATE, dims);
             const zeroVec = new Array(dims).fill(0);
-            const rows = await table.search(zeroVec).where(`filePath = '${filePath.replace(/'/g, "''")}'`).limit(1).toArray();
+            const rows = await table.search(zeroVec).where(`"filePath" = '${filePath.replace(/'/g, "''")}'`).limit(1).toArray();
             if (rows.length === 0) return null;
             return { mtimeMs: Number(rows[0].mtimeMs ?? 0), size: Number(rows[0].size ?? 0) };
         } catch {
@@ -95,12 +95,12 @@ export class FileWatcherService {
             const table = await ensureTable(dbPath, TABLE_NAMES.WATCH_STATE, dims);
             const escapedPath = filePath.replace(/'/g, "''");
             const zeroVec = new Array(dims).fill(0);
-            const existing = await table.search(zeroVec).where(`filePath = '${escapedPath}'`).limit(1).toArray();
+            const existing = await table.search(zeroVec).where(`"filePath" = '${escapedPath}'`).limit(1).toArray();
             const now = new Date().toISOString();
 
             if (existing.length > 0) {
                 await table.update({
-                    where: `filePath = '${escapedPath}'`,
+                    where: `"filePath" = '${escapedPath}'`,
                     values: { mtimeMs, size, processedAt: now, status: "processed" },
                 });
             } else {

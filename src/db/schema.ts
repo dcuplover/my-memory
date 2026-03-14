@@ -208,8 +208,7 @@ export async function ensureTable(
             // Check for schema migration (new columns added since table creation)
             table = await migrateTableIfNeeded(conn, table, tableName, dims);
             // Quick health check: verify data files are intact
-            const zeroVec = new Array(dims).fill(0);
-            await table.search(zeroVec).limit(1).toArray();
+            await table.countRows();
         } catch (err) {
             const msg = String(err);
             if (msg.includes("Not found") || msg.includes("LanceError") || msg.includes("corrupt")) {
