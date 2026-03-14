@@ -203,9 +203,31 @@ export async function ensureTable(
     let table: LanceDbTable;
 
     if (existing.includes(tableName)) {
-        table = await conn.openTable(tableName);
-        // Check for schema migration (new columns added since table creation)
-        table = await migrateTableIfNeeded(conn, table, tableName, dims);
+        try {
+            table = await conn.openTable(tableName);
+            // Check for schema migration (new columns added since table creation)
+            table = await migrateTableIfNeeded(conn, table, tableName, dims);
+            // Quick health check: verify data files are intact
+            const zeroVec = new Array(dims).fill(0);
+            await table.search(zeroVec).limit(1).toArray();
+        } catch (err) {
+            const msg = String(err);
+            if (msg.includes("Not found") || msg.includes("LanceError") || msg.includes("corrupt")) {
+                // Data files corrupted / missing — drop and recreate
+                try { await conn.dropTable(tableName); } catch { /* already gone */ }
+                const seedFn = SCHEMA_SEEDS[tableName];
+                if (!seedFn) throw new Error(`Unknown table: ${tableName}`);
+                table = await conn.createTable(tableName, [seedFn(dims)]);
+                try { await table.delete(`id = '__seed__'`); } catch { /* non-critical */ }
+                // Clear caches so FTS/migration are re-checked
+                migrationChecked.delete(tableName);
+                for (const key of ftsEnsured) {
+                    if (key.endsWith(`::${tableName}`)) ftsEnsured.delete(key);
+                }
+            } else {
+                throw err;
+            }
+        }
     } else {
         const seedFn = SCHEMA_SEEDS[tableName];
         if (!seedFn) {
