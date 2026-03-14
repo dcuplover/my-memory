@@ -61,7 +61,7 @@ export type LayerScoreConfig = {
 };
 
 export const DEFAULT_LAYER_SCORE_CONFIG: LayerScoreConfig = {
-    scoreThreshold: 0.1,
+    scoreThreshold: 0.4,
     layerTopK: 3,
     recencyHalfLifeDays: 30,
 };
