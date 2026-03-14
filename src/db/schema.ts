@@ -23,6 +23,7 @@ function memoryBaseSeed(dims: number): LanceDbRow {
         vector: makeVector(dims),
         channel: "",
         credibility: 0,
+        evidence: 1,
         createdAt: "",
         updatedAt: "",
     };

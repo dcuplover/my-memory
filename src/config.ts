@@ -53,6 +53,19 @@ export const DEFAULT_DIARY_FTS_COLUMNS = ["content", "title"];
 export const DEFAULT_DOCUMENT_FTS_COLUMNS = ["summary", "title"];
 export const VECTOR_RECALL_TOP_K = 5;
 
+// ─── Layer Score Config ───
+export type LayerScoreConfig = {
+    scoreThreshold: number;
+    layerTopK: number;
+    recencyHalfLifeDays: number;
+};
+
+export const DEFAULT_LAYER_SCORE_CONFIG: LayerScoreConfig = {
+    scoreThreshold: 0.1,
+    layerTopK: 3,
+    recencyHalfLifeDays: 30,
+};
+
 // ─── Plugin Config Type ───
 export type PluginConfig = {
     lanceDbPath?: string;
@@ -72,6 +85,8 @@ export type PluginConfig = {
     channelWeightsPath?: string;
     chunkSize?: number;
     chunkOverlap?: number;
+    layerScoreConfig?: Partial<LayerScoreConfig>;
+    layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
 };
 
 // ─── Config Reader ───
@@ -113,6 +128,15 @@ export function getRerankConfig(api: any) {
     const apiKey = cfg.rerankApiKey?.trim();
     if (!baseUrl || !model || !apiKey) return undefined;
     return { baseUrl, model, apiKey };
+}
+
+export function getLayerScoreConfig(api: any, layer?: string): LayerScoreConfig {
+    const cfg = getPluginConfig(api);
+    const base: LayerScoreConfig = { ...DEFAULT_LAYER_SCORE_CONFIG, ...cfg.layerScoreConfig };
+    if (layer && cfg.layerScoreOverrides?.[layer]) {
+        return { ...base, ...cfg.layerScoreOverrides[layer] };
+    }
+    return base;
 }
 
 // ─── Channel Weights ───

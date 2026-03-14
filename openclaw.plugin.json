@@ -80,6 +80,39 @@
         "type": "integer",
         "minimum": 0,
         "description": "文档切分重叠大小（字符数），默认 128"
+      },
+      "layerScoreConfig": {
+        "type": "object",
+        "description": "分层评分默认配置（应用于所有层）",
+        "properties": {
+          "scoreThreshold": {
+            "type": "number",
+            "minimum": 0,
+            "description": "最低得分阈值，低于此分数的结果将被过滤，默认 0.1"
+          },
+          "layerTopK": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "每层最多返回结果数，默认 3"
+          },
+          "recencyHalfLifeDays": {
+            "type": "number",
+            "minimum": 1,
+            "description": "时间衰减半衰期（天），记忆经过此天数后 recency 降为 0.5，默认 30"
+          }
+        }
+      },
+      "layerScoreOverrides": {
+        "type": "object",
+        "description": "每层独立评分配置覆盖（层名: attitude / fact / knowledge / preference / diary / document）",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "scoreThreshold": { "type": "number", "minimum": 0 },
+            "layerTopK": { "type": "integer", "minimum": 1 },
+            "recencyHalfLifeDays": { "type": "number", "minimum": 1 }
+          }
+        }
       }
     },
     "required": ["lanceDbPath", "embedBaseUrl", "embedModel", "embedApiKey", "llmBaseUrl", "llmModel", "llmApiKey"]

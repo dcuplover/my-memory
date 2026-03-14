@@ -7,12 +7,11 @@ import type { SearchResult } from "./search/hybrid";
 export function formatMemoryResults(results: SearchResult[], layerLabel: string): string | undefined {
     if (results.length === 0) return undefined;
 
-    // Sort by credibility descending, then by _score descending
+    // Sort by finalScore descending (已在 query.ts 中计算, 此处保底排序)
     const sorted = [...results].sort((a, b) => {
-        const credA = Number(a.credibility ?? 0);
-        const credB = Number(b.credibility ?? 0);
-        if (credB !== credA) return credB - credA;
-        return (Number(b._score) || 0) - (Number(a._score) || 0);
+        const scoreA = Number(a._finalScore ?? a._score ?? 0);
+        const scoreB = Number(b._finalScore ?? b._score ?? 0);
+        return scoreB - scoreA;
     });
 
     const lines = sorted.map((row, i) => {
@@ -28,6 +27,7 @@ export function formatMemoryResults(results: SearchResult[], layerLabel: string)
         if (row.options) parts.push(`选项: ${String(row.options)}`);
         const cred = Number(row.credibility ?? 0).toFixed(2);
         parts.push(`可信度: ${cred}`);
+        if (row._finalScore != null) parts.push(`得分: ${Number(row._finalScore).toFixed(2)}`);
         return `${i + 1}. ${parts.join(" | ")}`;
     });
 

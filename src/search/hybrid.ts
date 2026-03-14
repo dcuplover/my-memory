@@ -20,6 +20,7 @@ export type SearchOptions = {
 
 export type SearchResult = LanceDbRow & {
     _score?: number;
+    _finalScore?: number;
 };
 
 /**
@@ -91,6 +92,15 @@ async function doHybridSearch(opts: SearchOptions): Promise<SearchResult[]> {
 function normalizeScores(rows: LanceDbRow[], field: string, isDistance: boolean): SearchResult[] {
     if (rows.length === 0) return [];
 
+    if (isDistance) {
+        // 向量距离 → 绝对归一化: 1/(1+d)，distance=0 → 1.0, distance=1 → 0.5
+        return rows.map((row) => {
+            const d = Math.max(0, Number(row[field]) || 0);
+            return { ...row, _score: 1 / (1 + d) } as SearchResult;
+        });
+    }
+
+    // BM25 分数 → 批次内 min-max 归一化
     const values = rows.map((r) => Number(r[field]) || 0);
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -98,9 +108,7 @@ function normalizeScores(rows: LanceDbRow[], field: string, isDistance: boolean)
 
     return rows.map((row, i) => {
         const raw = values[i];
-        // Distance: lower is better → invert. Score: higher is better → keep.
-        const normalized = isDistance ? 1 - (raw - min) / range : (raw - min) / range;
-        return { ...row, _score: normalized } as SearchResult;
+        return { ...row, _score: (raw - min) / range } as SearchResult;
     });
 }
 

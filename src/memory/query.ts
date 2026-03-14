@@ -13,9 +13,11 @@ import {
     getLanceDbPath,
     getEmbedConfig,
     getRerankConfig,
+    getLayerScoreConfig,
     DEFAULT_RESULT_LIMIT,
     DEFAULT_TOP_K,
     DEFAULT_MIN_PROMPT_LENGTH,
+    type LayerScoreConfig,
 } from "../config";
 import type { EmbedConfig } from "../embedding";
 import type { RerankConfig } from "../search/reranker";
@@ -50,6 +52,30 @@ function selectLayersByKeywords(query: string): { memoryLayers: MemoryLayer[]; f
     }
 
     return { memoryLayers, fileLayers };
+}
+
+// ─── 分层评分：similarity × credibility × recency × log₂(evidence+1) ───
+
+function applyLayerScoring(results: SearchResult[], scoreCfg: LayerScoreConfig): SearchResult[] {
+    const now = Date.now();
+    const halfLifeMs = scoreCfg.recencyHalfLifeDays * 24 * 60 * 60 * 1000;
+    const lambda = Math.LN2 / halfLifeMs;
+
+    const scored = results.map(r => {
+        const similarity = r._score ?? 0;
+        const credibility = Number(r.credibility ?? 0) || 0.5;
+        const updatedAt = r.updatedAt ? new Date(String(r.updatedAt)).getTime() : now;
+        const ageMs = Math.max(0, now - updatedAt);
+        const recencyWeight = Math.exp(-lambda * ageMs);
+        const evidence = Math.max(1, Number(r.evidence ?? 1));
+        const evidenceBoost = Math.log2(evidence + 1);
+        const finalScore = similarity * credibility * recencyWeight * evidenceBoost;
+        return { ...r, _finalScore: finalScore };
+    });
+    return scored
+        .filter(r => (r._finalScore ?? 0) >= scoreCfg.scoreThreshold)
+        .sort((a, b) => (b._finalScore ?? 0) - (a._finalScore ?? 0))
+        .slice(0, scoreCfg.layerTopK);
 }
 
 /**
@@ -128,21 +154,23 @@ export async function queryMemory(api: any, prompt: string): Promise<string | un
             `共 ${searchTasks.length} 个搜索任务`,
         );
 
-        // Step 3: 组装结果
+        // Step 3: 分层评分 + 阈值过滤 + TopK 截断
         const contextSections: (string | undefined)[] = [];
 
         for (const { type, layer, results } of allResults) {
+            const scoreCfg = getLayerScoreConfig(api, layer);
+            const filtered = applyLayerScoring(results, scoreCfg);
+
             if (type === "summary") {
-                if (results.length > 0) {
+                if (filtered.length > 0) {
                     const fileLayer = layer as FileLayer;
-                    const tableName = getTableForFileLayer(fileLayer);
                     const label = LAYER_DESCRIPTIONS[fileLayer];
-                    contextSections.push(formatFileSummary(tableName, results.length, label));
+                    contextSections.push(formatFileSummary(getTableForFileLayer(fileLayer), filtered.length, label));
                 }
             } else {
                 const layerKey = layer as MemoryLayer | FileLayer;
                 const label = LAYER_DESCRIPTIONS[layerKey];
-                contextSections.push(formatMemoryResults(results, label));
+                contextSections.push(formatMemoryResults(filtered, label));
             }
         }
 

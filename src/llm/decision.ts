@@ -104,6 +104,7 @@ export async function executeMemoryDecision(
                         vector,
                         channel,
                         credibility,
+                        evidence: 1,
                         createdAt: now,
                         updatedAt: now,
                         ...(factData?.extraFields ?? {}),
@@ -116,9 +117,12 @@ export async function executeMemoryDecision(
                     if (!realId) break;
                     const text = action.text ?? factData?.content ?? "";
                     const vector = await generateEmbedding(text, embedCfg);
+                    const oldRow = allOldMemories.get(realId);
+                    const oldEvidence = Number(oldRow?.evidence ?? 1);
                     await updateRecord(dbPath, tableName, realId, {
                         content: text,
                         vector,
+                        evidence: oldEvidence + 1,
                         updatedAt: now,
                         ...(factData?.extraFields ?? {}),
                     });
