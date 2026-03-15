@@ -139,7 +139,7 @@ export function getLlmConfig(api: any) {
     const apiKey = cfg.llmApiKey?.trim();
     if (!baseUrl || !model || !apiKey) return undefined;
     const timeoutMs = (cfg.llmTimeoutSeconds ?? DEFAULT_LLM_TIMEOUT_SECONDS) * 1000;
-    return { baseUrl, model, apiKey, timeoutMs };
+    return { baseUrl, model, apiKey, timeoutMs, enableThinking: false };
 }
 
 /**
