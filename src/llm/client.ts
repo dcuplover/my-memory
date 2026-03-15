@@ -32,57 +32,91 @@ export async function chatCompletion(
     console.log(`[${stepName}] 请求 ${cfg.model} (${url})`);
 
     const timeoutMs = options?.timeoutMs ?? cfg.timeoutMs ?? 300_000;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const maxRetries = 3;
+    const bodyObj = {
+        model: cfg.model,
+        messages,
+        temperature: options?.temperature ?? 0.3,
+        max_tokens: options?.maxTokens ?? 8192,
+        ...(cfg.enableThinking === false ? { enable_thinking: false } : {}),
+    };
+    const requestBody = JSON.stringify(bodyObj);
+    const msgLengths = messages.map((m) => `${m.role}:${m.content.length}`).join(", ");
+    console.log(`[${stepName}] 请求体大小: ${requestBody.length} 字符, messages: [${msgLengths}], max_tokens: ${bodyObj.max_tokens}, timeout: ${Math.round(timeoutMs / 1000)}s`);
 
-    let resp: Response;
-    try {
-        resp = await fetch(url, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${cfg.apiKey}`,
-            },
-            body: JSON.stringify({
-                model: cfg.model,
-                messages,
-                temperature: options?.temperature ?? 0.3,
-                max_tokens: options?.maxTokens ?? 8192,
-                ...(cfg.enableThinking === false ? { enable_thinking: false } : {}),
-            }),
-            signal: controller.signal,
-        });
-    } catch (err: any) {
-        clearTimeout(timeout);
-        if (err?.name === "AbortError") {
-            throw new Error(`[${stepName}] LLM 请求超时 (${Math.round(timeoutMs / 1000)}s)`);
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+            const delayMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
+            console.log(`[${stepName}] 第 ${attempt}/${maxRetries} 次重试，等待 ${delayMs}ms...`);
+            await new Promise((r) => setTimeout(r, delayMs));
         }
-        throw err;
-    } finally {
-        clearTimeout(timeout);
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        const startTime = Date.now();
+
+        let resp: Response;
+        try {
+            resp = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${cfg.apiKey}`,
+                },
+                body: requestBody,
+                signal: controller.signal,
+            });
+        } catch (err: any) {
+            clearTimeout(timeout);
+            const elapsed = Date.now() - startTime;
+            if (err?.name === "AbortError") {
+                throw new Error(`[${stepName}] LLM 请求超时 (${Math.round(timeoutMs / 1000)}s)`);
+            }
+            console.error(`[${stepName}] 网络异常 (耗时${elapsed}ms, attempt ${attempt}/${maxRetries}): ${err?.message ?? err}`);
+            lastError = err;
+            if (attempt < maxRetries) continue;
+            throw err;
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        const elapsed = Date.now() - startTime;
+
+        if (resp.status >= 500 && attempt < maxRetries) {
+            const body = await resp.text();
+            console.warn(`[${stepName}] 服务端错误 ${resp.status} (耗时${elapsed}ms, attempt ${attempt}/${maxRetries}): ${body.slice(0, 300)}`);
+            lastError = new Error(`LLM API error ${resp.status}: ${body}`);
+            continue;
+        }
+
+        if (!resp.ok) {
+            const body = await resp.text();
+            console.error(`[${stepName}] 请求失败 ${resp.status} (耗时${elapsed}ms): ${body.slice(0, 500)}`);
+            throw new Error(`LLM API error ${resp.status}: ${body}`);
+        }
+
+        console.log(`[${stepName}] 响应 ${resp.status} (耗时${elapsed}ms${attempt > 0 ? `, 第${attempt}次重试成功` : ""})`);
+
+        const json = (await resp.json()) as {
+            choices: { message: { content: string } }[];
+            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+        };
+
+        const content = json.choices[0]?.message?.content ?? "";
+        console.log(`[${stepName}] LLM 原始返回 (${content.length}字符): ${content.slice(0, 500)}${content.length > 500 ? "..." : ""}`);
+        const usage: TokenUsage = {
+            promptTokens: json.usage?.prompt_tokens ?? 0,
+            completionTokens: json.usage?.completion_tokens ?? 0,
+            totalTokens: json.usage?.total_tokens ?? 0,
+        };
+
+        currentTracker()?.addTokens(stepName, usage);
+
+        return { content, usage };
     }
 
-    if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(`LLM API error ${resp.status}: ${body}`);
-    }
-
-    const json = (await resp.json()) as {
-        choices: { message: { content: string } }[];
-        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
-    };
-
-    const content = json.choices[0]?.message?.content ?? "";
-    console.log(`[${stepName}] LLM 原始返回 (${content.length}字符): ${content.slice(0, 500)}${content.length > 500 ? "..." : ""}`);
-    const usage: TokenUsage = {
-        promptTokens: json.usage?.prompt_tokens ?? 0,
-        completionTokens: json.usage?.completion_tokens ?? 0,
-        totalTokens: json.usage?.total_tokens ?? 0,
-    };
-
-    currentTracker()?.addTokens(stepName, usage);
-
-    return { content, usage };
+    throw lastError ?? new Error(`[${stepName}] LLM 请求失败，已重试 ${maxRetries} 次`);
 }
 
 /**
