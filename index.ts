@@ -953,7 +953,7 @@ export default function (api: any) {
                             max_tokens: 16, temperature: 0,
                             ...(llmCfg.enableThinking === false ? { enable_thinking: false } : {}),
                         }),
-                        signal: AbortSignal.timeout(30_000),
+                        signal: AbortSignal.timeout(60_000),
                     });
                     if (!resp.ok) {
                         const body = await resp.text().catch(() => "");
@@ -963,8 +963,9 @@ export default function (api: any) {
                         const reply = json.choices?.[0]?.message?.content?.slice(0, 50) ?? "(empty)";
                         results.push(`✅ **LLM** (${llmCfg.model}) — ${Date.now() - t0}ms, 回复: "${reply}"`);
                     }
-                } catch (err) {
-                    results.push(`❌ **LLM** (${llmCfg.model}) — ${String(err)}`);
+                } catch (err: any) {
+                    const msg = err?.name === "TimeoutError" ? `超时 (60s)` : String(err);
+                    results.push(`❌ **LLM** (${llmCfg.model}) — ${msg}`);
                 }
             } else {
                 results.push(`⚠️ **LLM** — 未配置`);
@@ -986,7 +987,7 @@ export default function (api: any) {
                             max_tokens: 16, temperature: 0,
                             ...(distillCfg.enableThinking === false ? { enable_thinking: false } : {}),
                         }),
-                        signal: AbortSignal.timeout(30_000),
+                        signal: AbortSignal.timeout(60_000),
                     });
                     if (!resp.ok) {
                         const body = await resp.text().catch(() => "");
@@ -996,8 +997,9 @@ export default function (api: any) {
                         const reply = json.choices?.[0]?.message?.content?.slice(0, 50) ?? "(empty)";
                         results.push(`✅ **蒸馏LLM** (${distillCfg.model}) — ${Date.now() - t0}ms, 回复: "${reply}"`);
                     }
-                } catch (err) {
-                    results.push(`❌ **蒸馏LLM** (${distillCfg.model}) — ${String(err)}`);
+                } catch (err: any) {
+                    const msg = err?.name === "TimeoutError" ? `超时 (60s)` : String(err);
+                    results.push(`❌ **蒸馏LLM** (${distillCfg.model}) — ${msg}`);
                 }
             } else {
                 results.push(`⏭️ **蒸馏LLM** — 未单独配置（使用主LLM）`);
@@ -1013,7 +1015,7 @@ export default function (api: any) {
                         method: "POST",
                         headers: { "Content-Type": "application/json", Authorization: `Bearer ${rerankCfg.apiKey}` },
                         body: JSON.stringify({ model: rerankCfg.model, query: "test", documents: ["hello", "world"], top_n: 2 }),
-                        signal: AbortSignal.timeout(15_000),
+                        signal: AbortSignal.timeout(30_000),
                     });
                     if (!resp.ok) {
                         const body = await resp.text().catch(() => "");
