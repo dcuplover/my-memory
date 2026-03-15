@@ -4,6 +4,7 @@ export type LlmConfig = {
     baseUrl: string;
     model: string;
     apiKey: string;
+    enableThinking?: boolean;
 };
 
 export type ChatMessage = {
@@ -28,19 +29,36 @@ export async function chatCompletion(
     const stepName = options?.stepName ?? "llm_call";
     const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     console.log(`[${stepName}] 请求 ${cfg.model} (${url})`);
-    const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify({
-            model: cfg.model,
-            messages,
-            temperature: options?.temperature ?? 0.3,
-            max_tokens: options?.maxTokens ?? 2000,
-        }),
-    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000);
+
+    let resp: Response;
+    try {
+        resp = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${cfg.apiKey}`,
+            },
+            body: JSON.stringify({
+                model: cfg.model,
+                messages,
+                temperature: options?.temperature ?? 0.3,
+                max_tokens: options?.maxTokens ?? 8192,
+                ...(cfg.enableThinking === false ? { enable_thinking: false } : {}),
+            }),
+            signal: controller.signal,
+        });
+    } catch (err: any) {
+        clearTimeout(timeout);
+        if (err?.name === "AbortError") {
+            throw new Error(`[${stepName}] LLM 请求超时 (120s)`);
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeout);
+    }
 
     if (!resp.ok) {
         const body = await resp.text();

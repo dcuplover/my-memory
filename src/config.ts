@@ -145,8 +145,10 @@ export function getDistillLlmConfig(api: any) {
     const baseUrl = cfg.distillLlmBaseUrl?.trim();
     const model = cfg.distillLlmModel?.trim();
     const apiKey = cfg.distillLlmApiKey?.trim();
-    if (baseUrl && model && apiKey) return { baseUrl, model, apiKey };
-    return getLlmConfig(api);
+    if (baseUrl && model && apiKey) return { baseUrl, model, apiKey, enableThinking: false };
+    // 回退到主 LLM 时也关闭思考模式（蒸馏不需要推理）
+    const llm = getLlmConfig(api);
+    return llm ? { ...llm, enableThinking: false } : undefined;
 }
 
 export function getRerankConfig(api: any) {
