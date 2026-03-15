@@ -48,6 +48,7 @@ export const DEFAULT_MIN_PROMPT_LENGTH = 5;
 export const DEFAULT_EMBED_DIMENSIONS = 1536;
 export const DEFAULT_CHUNK_SIZE = 512;
 export const DEFAULT_CHUNK_OVERLAP = 128;
+export const DEFAULT_EXTRACT_CHUNK_SIZE = 10000; // ≈5k tokens
 export const DEFAULT_FTS_COLUMNS = ["content"];
 export const DEFAULT_MEMORY_FTS_COLUMNS = ["content", "subject"];
 export const DEFAULT_DIARY_FTS_COLUMNS = ["content", "title"];
@@ -89,6 +90,7 @@ export type PluginConfig = {
     channelWeightsPath?: string;
     chunkSize?: number;
     chunkOverlap?: number;
+    extractChunkSize?: number;
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
     watchPaths?: WatchPathConfig[];

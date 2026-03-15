@@ -18,6 +18,7 @@ import {
     DEFAULT_EMBED_DIMENSIONS,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_EXTRACT_CHUNK_SIZE,
     DEFAULT_RESULT_LIMIT,
     DEFAULT_TOP_K,
 } from "../config";
@@ -25,7 +26,6 @@ import { startTracker, clearTracker } from "../tracker";
 import type { AddMemoryResult } from "./add";
 
 // ─── 提取上限 ───
-const MAX_EXTRACT_CHUNK_SIZE = 2000; // 每次 LLM 提取的最大字符数
 const MAX_EXTRACT_CHUNK_OVERLAP = 200;
 
 /**
@@ -48,13 +48,14 @@ async function extractFromLongText(
     llmCfg: LlmConfig,
     tracker: ReturnType<typeof startTracker>,
     distillCfg?: LlmConfig,
+    extractChunkSize: number = DEFAULT_EXTRACT_CHUNK_SIZE,
 ): Promise<ExtractionResult> {
-    if (text.length <= MAX_EXTRACT_CHUNK_SIZE) {
+    if (text.length <= extractChunkSize) {
         return tracker.track("LLM记忆提取", () => extractMemories(text, llmCfg, distillCfg), `单段 ${text.length}字符`);
     }
 
     // 分段提取
-    const chunks = splitIntoChunks(text, MAX_EXTRACT_CHUNK_SIZE, MAX_EXTRACT_CHUNK_OVERLAP);
+    const chunks = splitIntoChunks(text, extractChunkSize, MAX_EXTRACT_CHUNK_OVERLAP);
     const results: ExtractionResult[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
@@ -208,7 +209,8 @@ export async function extractMemoryFromDiary(
         }
 
         // Step 2: 分段提取四层记忆（两步：蒸馏 → 分类）
-        const extraction = await extractFromLongText(diaryContent, llmCfg, tracker, distillCfg);
+        const extractChunkSize = cfg.extractChunkSize ?? DEFAULT_EXTRACT_CHUNK_SIZE;
+        const extraction = await extractFromLongText(diaryContent, llmCfg, tracker, distillCfg, extractChunkSize);
 
         const totalExtracted =
             extraction.attitudes.length +
@@ -376,7 +378,8 @@ export async function extractMemoryFromDocument(
         }
 
         // Step 2: 分段提取四层记忆（两步：蒸馏 → 分类）
-        const extraction = await extractFromLongText(docContent, llmCfg, tracker, distillCfg);
+        const extractChunkSize = cfg.extractChunkSize ?? DEFAULT_EXTRACT_CHUNK_SIZE;
+        const extraction = await extractFromLongText(docContent, llmCfg, tracker, distillCfg, extractChunkSize);
 
         const totalExtracted =
             extraction.attitudes.length +
