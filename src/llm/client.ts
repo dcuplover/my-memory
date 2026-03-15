@@ -73,9 +73,12 @@ export async function chatCompletionJson<T>(
 ): Promise<{ data: T; usage: TokenUsage }> {
     const result = await chatCompletion(messages, cfg, options);
 
+    // Strip thinking blocks (e.g. Qwen3 <think>...</think>)
+    let text = result.content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
     // Extract JSON from possible markdown code fence
-    const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, result.content];
-    const jsonStr = (jsonMatch[1] ?? result.content).trim();
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
+    const jsonStr = (jsonMatch[1] ?? text).trim();
 
     try {
         const data = JSON.parse(jsonStr) as T;
