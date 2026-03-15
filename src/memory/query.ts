@@ -63,7 +63,7 @@ function applyLayerScoring(results: SearchResult[], scoreCfg: LayerScoreConfig):
 
     const scored = results.map(r => {
         const similarity = r._score ?? 0;
-        const credibility = Number(r.credibility ?? 0) || 0.5;
+        const credibility = Number(r.credibility ?? 1) || 1;
         const updatedAt = r.updatedAt ? new Date(String(r.updatedAt)).getTime() : now;
         const ageMs = Math.max(0, now - updatedAt);
         const recencyWeight = Math.exp(-lambda * ageMs);
@@ -81,20 +81,20 @@ function applyLayerScoring(results: SearchResult[], scoreCfg: LayerScoreConfig):
 /**
  * Main memory query logic for before_prompt_build hook.
  */
-export async function queryMemory(api: any, prompt: string): Promise<string | undefined> {
+export async function queryMemory(api: any, prompt: string): Promise<string> {
     const cfg = getPluginConfig(api);
     const dbPath = getLanceDbPath(api);
-    if (!dbPath) return undefined;
+    if (!dbPath) return "";
 
     const normalizedPrompt = prompt.trim();
-    if (normalizedPrompt.length < DEFAULT_MIN_PROMPT_LENGTH) return undefined;
+    if (normalizedPrompt.length < DEFAULT_MIN_PROMPT_LENGTH) return "";
 
     const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
     const rerankCfg = getRerankConfig(api) as RerankConfig | undefined;
 
     if (!embedCfg) {
         api.logger?.warn?.("Memory query skipped: missing embed config");
-        return undefined;
+        return "";
     }
 
     const resultLimit = Math.max(cfg.resultLimit ?? DEFAULT_RESULT_LIMIT, 1);
@@ -160,6 +160,8 @@ export async function queryMemory(api: any, prompt: string): Promise<string | un
         for (const { type, layer, results } of allResults) {
             const scoreCfg = getLayerScoreConfig(api, layer);
             const filtered = applyLayerScoring(results, scoreCfg);
+
+            api.logger?.info?.(`[记忆查询] ${layer}: ${results.length}条原始 → ${filtered.length}条过滤后 (阈值${scoreCfg.scoreThreshold})${results.length > 0 ? `, 最高分=${Math.max(...results.map(r => r._score ?? 0)).toFixed(3)}` : ""}`);
 
             if (type === "summary") {
                 if (filtered.length > 0) {

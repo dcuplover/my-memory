@@ -45,9 +45,9 @@ export function formatFileSummary(tableName: string, count: number, layerLabel: 
 /**
  * Assemble all layer results into final prependContext string.
  */
-export function assembleContext(sections: (string | undefined)[]): string | undefined {
+export function assembleContext(sections: (string | undefined)[]): string {
     const valid = sections.filter((s): s is string => !!s);
-    if (valid.length === 0) return undefined;
+    if (valid.length === 0) return "";
     return [
         "以下是从记忆系统中检索到的相关信息，请仅在与用户问题直接相关时参考使用：",
         "",
