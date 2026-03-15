@@ -48,7 +48,7 @@ export async function extractMemories(
     const distillMessages = buildDistillationMessages(inputText);
     const { data: statements } = await chatCompletionJson<string[]>(distillMessages, distillCfg ?? classifyCfg, {
         temperature: 0.2,
-        maxTokens: 16384,
+        maxTokens: 8192,
         stepName: "LLM信息蒸馏",
     });
 
@@ -64,7 +64,7 @@ export async function extractMemories(
     const classifyMessages = buildClassificationMessages(validStatements);
     const { data: result } = await chatCompletionJson<ExtractionResult>(classifyMessages, classifyCfg, {
         temperature: 0.2,
-        maxTokens: 16384,
+        maxTokens: 8192,
         stepName: "LLM记忆分类",
     });
 

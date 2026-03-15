@@ -41,8 +41,14 @@ export async function chatCompletion(
         ...(cfg.enableThinking === false ? { enable_thinking: false } : {}),
     };
     const requestBody = JSON.stringify(bodyObj);
+    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+    const estimatedTokens = Math.ceil(totalChars / 2); // 中文约 1 token/2 chars
     const msgLengths = messages.map((m) => `${m.role}:${m.content.length}`).join(", ");
-    console.log(`[${stepName}] 请求体大小: ${requestBody.length} 字符, messages: [${msgLengths}], max_tokens: ${bodyObj.max_tokens}, timeout: ${Math.round(timeoutMs / 1000)}s`);
+    console.log(`[${stepName}] 请求体大小: ${requestBody.length} 字符, messages: [${msgLengths}], 总输入 ~${totalChars} 字符 (~${estimatedTokens} tokens), max_tokens: ${bodyObj.max_tokens}, timeout: ${Math.round(timeoutMs / 1000)}s`);
+    for (const m of messages) {
+        const preview = m.content.length > 500 ? m.content.slice(0, 500) + `...(截断, 共${m.content.length}字符)` : m.content;
+        console.log(`[${stepName}] [${m.role}] ${preview}`);
+    }
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
