@@ -25,7 +25,9 @@ export async function chatCompletion(
     cfg: LlmConfig,
     options?: { temperature?: number; maxTokens?: number; stepName?: string },
 ): Promise<LlmResult> {
+    const stepName = options?.stepName ?? "llm_call";
     const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+    console.log(`[${stepName}] 请求 ${cfg.model} (${url})`);
     const resp = await fetch(url, {
         method: "POST",
         headers: {
@@ -51,13 +53,13 @@ export async function chatCompletion(
     };
 
     const content = json.choices[0]?.message?.content ?? "";
+    console.log(`[${stepName}] LLM 原始返回 (${content.length}字符): ${content.slice(0, 500)}${content.length > 500 ? "..." : ""}`);
     const usage: TokenUsage = {
         promptTokens: json.usage?.prompt_tokens ?? 0,
         completionTokens: json.usage?.completion_tokens ?? 0,
         totalTokens: json.usage?.total_tokens ?? 0,
     };
 
-    const stepName = options?.stepName ?? "llm_call";
     currentTracker()?.addTokens(stepName, usage);
 
     return { content, usage };
@@ -72,18 +74,27 @@ export async function chatCompletionJson<T>(
     options?: { temperature?: number; maxTokens?: number; stepName?: string },
 ): Promise<{ data: T; usage: TokenUsage }> {
     const result = await chatCompletion(messages, cfg, options);
+    const stepName = options?.stepName ?? "llm_call";
 
     // Strip thinking blocks (e.g. Qwen3 <think>...</think>)
     let text = result.content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    if (text.length !== result.content.length) {
+        console.log(`[${stepName}] 已剥离 <think> 块，剩余内容 (${text.length}字符): ${text.slice(0, 300)}${text.length > 300 ? "..." : ""}`);
+    }
 
     // Extract JSON from possible markdown code fence
     const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
     const jsonStr = (jsonMatch[1] ?? text).trim();
+    if (jsonMatch[0]) {
+        console.log(`[${stepName}] 从代码围栏提取 JSON (${jsonStr.length}字符)`);
+    }
 
     try {
         const data = JSON.parse(jsonStr) as T;
+        console.log(`[${stepName}] JSON 解析成功`);
         return { data, usage: result.usage };
-    } catch {
+    } catch (e) {
+        console.error(`[${stepName}] JSON 解析失败，待解析内容: ${jsonStr.slice(0, 500)}`);
         throw new Error(`Failed to parse LLM JSON response: ${result.content.slice(0, 500)}`);
     }
 }
