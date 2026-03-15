@@ -13,6 +13,8 @@ import {
     getLanceDbPath,
     getPluginConfig,
     getEmbedConfig,
+    getLlmConfig,
+    getDistillLlmConfig,
     getRerankConfig,
     getHooksConfig,
     DEFAULT_RESULT_LIMIT,
@@ -24,7 +26,7 @@ import { LAYER_DESCRIPTIONS, FileLayer, getTableForFileLayer, MemoryLayer, ALL_M
 import type { EmbedConfig } from "./src/embedding";
 import type { RerankConfig } from "./src/search/reranker";
 import { FileWatcherService } from "./src/watcher";
-import { notifyViaWake } from "./src/hooks/notify";
+import { notifyViaHooks } from "./src/hooks/notify";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
@@ -227,9 +229,9 @@ export default function (api: any) {
                     (async () => {
                         try {
                             const result = await addMemory(api, text, channel);
-                            await notifyViaWake(hooks, `✅ 记忆添加完成：${formatAddResult(result)}`, api.logger);
+                            await notifyViaHooks(hooks, `✅ 记忆添加完成：${formatAddResult(result)}`, api.logger);
                         } catch (err) {
-                            await notifyViaWake(hooks, `❌ 记忆添加失败: ${String(err)}`, api.logger);
+                            await notifyViaHooks(hooks, `❌ 记忆添加失败: ${String(err)}`, api.logger);
                         }
                     })();
                     return { text: "⏳ 任务已启动，完成后会通知你。" };
@@ -390,9 +392,9 @@ export default function (api: any) {
                     (async () => {
                         try {
                             const result = await extractMemoryFromDiary(api, opts);
-                            await notifyViaWake(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
+                            await notifyViaHooks(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
                         } catch (err) {
-                            await notifyViaWake(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
+                            await notifyViaHooks(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
                         }
                     })();
                     return { text: "⏳ 日记记忆提取任务已启动，完成后会通知你。" };
@@ -425,9 +427,9 @@ export default function (api: any) {
                     (async () => {
                         try {
                             const result = await extractMemoryFromDocument(api, opts);
-                            await notifyViaWake(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
+                            await notifyViaHooks(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
                         } catch (err) {
-                            await notifyViaWake(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
+                            await notifyViaHooks(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
                         }
                     })();
                     return { text: "⏳ 文档记忆提取任务已启动，完成后会通知你。" };
@@ -484,9 +486,9 @@ export default function (api: any) {
                     (async () => {
                         try {
                             const result = await addMemory(api, params.text, params.channel || "daily_chat");
-                            await notifyViaWake(hooks, `✅ 记忆添加完成：${formatAddResult(result)}`, api.logger);
+                            await notifyViaHooks(hooks, `✅ 记忆添加完成：${formatAddResult(result)}`, api.logger);
                         } catch (err) {
-                            await notifyViaWake(hooks, `❌ 记忆添加失败: ${String(err)}`, api.logger);
+                            await notifyViaHooks(hooks, `❌ 记忆添加失败: ${String(err)}`, api.logger);
                         }
                     })();
                     return { content: [{ type: "text", text: "⏳ 任务已启动，完成后会通知你。" }] };
@@ -725,9 +727,9 @@ export default function (api: any) {
                     (async () => {
                         try {
                             const result = await extractMemoryFromDiary(api, opts);
-                            await notifyViaWake(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
+                            await notifyViaHooks(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
                         } catch (err) {
-                            await notifyViaWake(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
+                            await notifyViaHooks(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
                         }
                     })();
                     return { content: [{ type: "text", text: "⏳ 日记记忆提取任务已启动，完成后会通知你。" }] };
@@ -775,9 +777,9 @@ export default function (api: any) {
                     (async () => {
                         try {
                             const result = await extractMemoryFromDocument(api, opts);
-                            await notifyViaWake(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
+                            await notifyViaHooks(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
                         } catch (err) {
-                            await notifyViaWake(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
+                            await notifyViaHooks(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
                         }
                     })();
                     return { content: [{ type: "text", text: "⏳ 文档记忆提取任务已启动，完成后会通知你。" }] };
@@ -898,6 +900,174 @@ export default function (api: any) {
             fileWatcher = new FileWatcherService(api);
             fileWatcher.start(currentCfg.watchPaths);
             return { text: `文件监听服务已启动，监听 ${currentCfg.watchPaths.length} 个路径。` };
+        },
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // 6. /test_config — 测试所有已配置的模型端点
+    // ═══════════════════════════════════════════════════════════
+
+    api.registerCommand({
+        name: "test_config",
+        description: "测试所有已配置的模型端点（Embedding、LLM、蒸馏LLM、Rerank、Webhook），检查连通性和响应",
+        async handler(ctx: any) {
+            const results: string[] = ["## 🔍 模型端点连通性测试\n"];
+
+            // 1. Embedding
+            const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
+            if (embedCfg) {
+                const t0 = Date.now();
+                try {
+                    const url = `${embedCfg.baseUrl.replace(/\/+$/, "")}/embeddings`;
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${embedCfg.apiKey}` },
+                        body: JSON.stringify({ input: "test", model: embedCfg.model, dimensions: embedCfg.dimensions }),
+                    });
+                    if (!resp.ok) {
+                        const body = await resp.text().catch(() => "");
+                        results.push(`❌ **Embedding** (${embedCfg.model}) — HTTP ${resp.status}: ${body.slice(0, 200)}`);
+                    } else {
+                        const json = await resp.json() as any;
+                        const dim = json.data?.[0]?.embedding?.length ?? "?";
+                        results.push(`✅ **Embedding** (${embedCfg.model}) — ${Date.now() - t0}ms, 维度=${dim}`);
+                    }
+                } catch (err) {
+                    results.push(`❌ **Embedding** (${embedCfg.model}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⚠️ **Embedding** — 未配置`);
+            }
+
+            // 2. LLM (主)
+            const llmCfg = getLlmConfig(api);
+            if (llmCfg) {
+                const t0 = Date.now();
+                try {
+                    const url = `${llmCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${llmCfg.apiKey}` },
+                        body: JSON.stringify({
+                            model: llmCfg.model, messages: [{ role: "user", content: "回复OK" }],
+                            max_tokens: 16, temperature: 0,
+                            ...(llmCfg.enableThinking === false ? { enable_thinking: false } : {}),
+                        }),
+                        signal: AbortSignal.timeout(30_000),
+                    });
+                    if (!resp.ok) {
+                        const body = await resp.text().catch(() => "");
+                        results.push(`❌ **LLM** (${llmCfg.model}) — HTTP ${resp.status}: ${body.slice(0, 200)}`);
+                    } else {
+                        const json = await resp.json() as any;
+                        const reply = json.choices?.[0]?.message?.content?.slice(0, 50) ?? "(empty)";
+                        results.push(`✅ **LLM** (${llmCfg.model}) — ${Date.now() - t0}ms, 回复: "${reply}"`);
+                    }
+                } catch (err) {
+                    results.push(`❌ **LLM** (${llmCfg.model}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⚠️ **LLM** — 未配置`);
+            }
+
+            // 3. 蒸馏 LLM（仅当配置了独立蒸馏模型时测试）
+            const cfg = getPluginConfig(api);
+            const hasDistillCfg = cfg.distillLlmBaseUrl?.trim() && cfg.distillLlmModel?.trim() && cfg.distillLlmApiKey?.trim();
+            if (hasDistillCfg) {
+                const distillCfg = getDistillLlmConfig(api)!;
+                const t0 = Date.now();
+                try {
+                    const url = `${distillCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${distillCfg.apiKey}` },
+                        body: JSON.stringify({
+                            model: distillCfg.model, messages: [{ role: "user", content: "回复OK" }],
+                            max_tokens: 16, temperature: 0,
+                            ...(distillCfg.enableThinking === false ? { enable_thinking: false } : {}),
+                        }),
+                        signal: AbortSignal.timeout(30_000),
+                    });
+                    if (!resp.ok) {
+                        const body = await resp.text().catch(() => "");
+                        results.push(`❌ **蒸馏LLM** (${distillCfg.model}) — HTTP ${resp.status}: ${body.slice(0, 200)}`);
+                    } else {
+                        const json = await resp.json() as any;
+                        const reply = json.choices?.[0]?.message?.content?.slice(0, 50) ?? "(empty)";
+                        results.push(`✅ **蒸馏LLM** (${distillCfg.model}) — ${Date.now() - t0}ms, 回复: "${reply}"`);
+                    }
+                } catch (err) {
+                    results.push(`❌ **蒸馏LLM** (${distillCfg.model}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⏭️ **蒸馏LLM** — 未单独配置（使用主LLM）`);
+            }
+
+            // 4. Rerank
+            const rerankCfg = getRerankConfig(api) as RerankConfig | undefined;
+            if (rerankCfg) {
+                const t0 = Date.now();
+                try {
+                    const url = `${rerankCfg.baseUrl.replace(/\/+$/, "")}/rerank`;
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${rerankCfg.apiKey}` },
+                        body: JSON.stringify({ model: rerankCfg.model, query: "test", documents: ["hello", "world"], top_n: 2 }),
+                        signal: AbortSignal.timeout(15_000),
+                    });
+                    if (!resp.ok) {
+                        const body = await resp.text().catch(() => "");
+                        results.push(`❌ **Rerank** (${rerankCfg.model}) — HTTP ${resp.status}: ${body.slice(0, 200)}`);
+                    } else {
+                        results.push(`✅ **Rerank** (${rerankCfg.model}) — ${Date.now() - t0}ms`);
+                    }
+                } catch (err) {
+                    results.push(`❌ **Rerank** (${rerankCfg.model}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⏭️ **Rerank** — 未配置`);
+            }
+
+            // 5. Webhook
+            const hooksCfg = getHooksConfig(api);
+            if (hooksCfg) {
+                const t0 = Date.now();
+                try {
+                    // 用 wake 端点做连通性测试（轻量，不会触发 agent round）
+                    const url = `${hooksCfg.baseUrl.replace(/\/+$/, "")}/hooks/wake`;
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${hooksCfg.token}` },
+                        body: JSON.stringify({ text: "[test_config] webhook 连通性测试", mode: "now" }),
+                        signal: AbortSignal.timeout(10_000),
+                    });
+                    if (!resp.ok) {
+                        const body = await resp.text().catch(() => "");
+                        results.push(`❌ **Webhook** (${hooksCfg.baseUrl}) — HTTP ${resp.status}: ${body.slice(0, 200)}`);
+                    } else {
+                        results.push(`✅ **Webhook** (${hooksCfg.baseUrl}) — ${Date.now() - t0}ms`);
+                    }
+                } catch (err) {
+                    results.push(`❌ **Webhook** (${hooksCfg.baseUrl}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⏭️ **Webhook** — 未配置`);
+            }
+
+            // 6. LanceDB
+            const testDbPath = getLanceDbPath(api);
+            if (testDbPath) {
+                try {
+                    await ensureTable(testDbPath, TABLE_NAMES.ATTITUDE, cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS);
+                    results.push(`✅ **LanceDB** (${testDbPath}) — 连接正常`);
+                } catch (err) {
+                    results.push(`❌ **LanceDB** (${testDbPath}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⚠️ **LanceDB** — 未配置 lanceDbPath`);
+            }
+
+            return { text: results.join("\n") };
         },
     });
 }

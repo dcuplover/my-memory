@@ -83,7 +83,7 @@ npm install
 
 > 配置了 `distillLlmBaseUrl` + `distillLlmModel` + `distillLlmApiKey` 后，信息蒸馏步骤将使用独立模型（可用便宜模型降低成本），分类步骤仍使用主 LLM。未配置时两步均使用主 LLM。
 
-> 配置了 `hooksBaseUrl` + `hooksToken` 后，`add_memory`、`extract_diary_memory`、`extract_document_memory` 三个长任务将 **异步执行**：命令立即返回"⏳ 任务已启动"，后台完成后通过 OpenClaw Webhook `/hooks/wake` 推送结果通知。未配置时保持同步行为。
+> 配置了 `hooksBaseUrl` + `hooksToken` 后，`add_memory`、`extract_diary_memory`、`extract_document_memory` 三个长任务将 **异步执行**：命令立即返回"⏳ 任务已启动"，后台完成后通过 OpenClaw Webhook `/hooks/agent` 推送可见通知。未配置时保持同步行为。
 
 ---
 
@@ -137,6 +137,7 @@ npm install
 | `/extract_diary_memory` | 从日记中提取四层记忆 | `/extract_diary_memory 2024-01-15` |
 | `/extract_document_memory` | 从文档中提取四层记忆 | `/extract_document_memory 文档内容...` |
 | `/list_memory` | 查看已存储的记忆列表 | `/list_memory` 或 `/list_memory attitude` 或 `/list_memory fact 关键词` |
+| `/test_config` | 测试所有已配置的模型端点连通性 | `/test_config` |
 
 ---
 
@@ -320,7 +321,7 @@ my-memory/
     ├── embedding/
     │   └── index.ts          # Embedding API 调用
     ├── hooks/
-    │   └── notify.ts         # Webhook 异步通知（/hooks/wake）
+    │   └── notify.ts         # Webhook 异步通知（/hooks/agent）
     ├── llm/
     │   ├── client.ts         # LLM API 客户端
     │   ├── decision.ts       # 记忆变更决策（两阶段）
