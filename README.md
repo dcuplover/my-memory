@@ -83,7 +83,7 @@ npm install
 
 > 配置了 `distillLlmBaseUrl` + `distillLlmModel` + `distillLlmApiKey` 后，信息蒸馏步骤将使用独立模型（可用便宜模型降低成本），分类步骤仍使用主 LLM。未配置时两步均使用主 LLM。
 
-> 配置了 `hooksBaseUrl` + `hooksToken` 后，`add_memory`、`extract_diary_memory`、`extract_document_memory` 三个长任务将 **异步执行**：命令立即返回"⏳ 任务已启动"，后台完成后通过 OpenClaw Webhook `/hooks/agent` 推送可见通知。未配置时保持同步行为。
+> 配置了 `hooksBaseUrl` + `hooksToken` 后，`add_memory`、`extract_diary_memory`、`extract_document_memory` 三个长任务将 **异步执行**：命令立即返回"⏳ 任务已启动"，后台完成后通过 OpenClaw Webhook `/hooks/wake` 注入系统事件通知。用户下次发消息时 AI 会转达结果。未配置时保持同步行为。
 
 ---
 
