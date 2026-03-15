@@ -627,10 +627,14 @@ export default function (api: any) {
     // extract_diary_memory tool
     api.registerTool({
         name: "extract_diary_memory",
-        description: "从已存储的日记中提取四层记忆。默认只处理未提取过的新日记，避免重复处理。传 force=true 可重新提取全部。",
+        description: "从日记中提取四层记忆。支持指定磁盘文件路径直接读取，或从已存储的日记中提取。默认只处理未提取过的新日记，传 force=true 可重新提取全部。",
         parameters: {
             type: "object",
             properties: {
+                file_path: {
+                    type: "string",
+                    description: "磁盘上的文件路径（.md/.txt），直接读取文件内容并提取记忆",
+                },
                 query: {
                     type: "string",
                     description: "按关键词/语义搜索日记",
@@ -649,9 +653,10 @@ export default function (api: any) {
                 },
             },
         },
-        async execute(_id: string, params: { query?: string; date?: string; source_id?: string; force?: boolean }) {
+        async execute(_id: string, params: { file_path?: string; query?: string; date?: string; source_id?: string; force?: boolean }) {
             try {
                 const result = await extractMemoryFromDiary(api, {
+                    filePath: params.file_path,
                     query: params.query,
                     date: params.date,
                     sourceId: params.source_id,
@@ -667,7 +672,7 @@ export default function (api: any) {
     // extract_document_memory tool
     api.registerTool({
         name: "extract_document_memory",
-        description: "从文档中全面提取四层记忆（态度、事实、知识、价值观选择）。支持传入文档内容、按文件路径查找、或按关键词搜索已有文档。分段提取确保不遗漏，逐条决策。",
+        description: "从文档中全面提取四层记忆（态度、事实、知识、价值观选择）。支持指定磁盘文件路径直接读取、传入文档内容、或按关键词搜索已有文档。分段提取确保不遗漏，逐条决策。",
         parameters: {
             type: "object",
             properties: {
@@ -677,7 +682,7 @@ export default function (api: any) {
                 },
                 file_path: {
                     type: "string",
-                    description: "按文件路径查找已存储的文档",
+                    description: "文件路径：先尝试从磁盘读取，找不到则按路径查找已存储的文档",
                 },
                 query: {
                     type: "string",

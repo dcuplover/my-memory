@@ -6,6 +6,8 @@ import { MemoryLayer, getTableForMemoryLayer } from "./layers";
 import { ensureTable } from "../db/schema";
 import { search } from "../search/hybrid";
 import { splitIntoChunks } from "../document/chunker";
+import { readFileSync, existsSync } from "fs";
+import { resolve, basename, extname } from "path";
 import {
     TABLE_NAMES,
     getPluginConfig,
@@ -148,6 +150,8 @@ export type ExtractFromDiaryOptions = {
     date?: string;
     /** 按 source_id 指定某篇日记 */
     sourceId?: string;
+    /** 指定磁盘文件路径，自动导入为日记并提取记忆 */
+    filePath?: string;
     /** 强制重新提取（包括已提取过的日记） */
     force?: boolean;
 };
@@ -173,11 +177,25 @@ export async function extractMemoryFromDiary(
     const tracker = startTracker("日记记忆提取");
 
     try {
-        // Step 1: 获取日记内容（默认只获取未提取过的）
-        const { content: diaryContent, sourceIds: processedSourceIds } = await tracker.track(
-            "获取日记内容",
-            async () => fetchDiaryContent(dbPath, embedCfg, options, cfg, dims),
-        );
+        // Step 1: 获取日记内容
+        let diaryContent: string;
+        let processedSourceIds: string[];
+
+        if (options.filePath) {
+            // 从磁盘文件读取
+            const fullPath = resolve(options.filePath);
+            if (!existsSync(fullPath)) throw new Error(`文件不存在: ${fullPath}`);
+            diaryContent = await tracker.track("读取磁盘文件", async () => readFileSync(fullPath, "utf-8"), fullPath);
+            processedSourceIds = [];
+        } else {
+            // 从数据库查询（默认只获取未提取过的）
+            const result = await tracker.track(
+                "获取日记内容",
+                async () => fetchDiaryContent(dbPath, embedCfg, options, cfg, dims),
+            );
+            diaryContent = result.content;
+            processedSourceIds = result.sourceIds;
+        }
 
         if (!diaryContent || diaryContent.trim().length === 0) {
             const msg = options.force
@@ -312,7 +330,7 @@ async function fetchDiaryContent(
 export type ExtractFromDocumentOptions = {
     /** 按关键词/语义搜索文档，留空则提取全部文档 */
     query?: string;
-    /** 按文件路径精确匹配 */
+    /** 按文件路径查找：先尝试从磁盘读取，找不到则按路径查询数据库 */
     filePath?: string;
     /** 直接传入文档内容（跳过从数据库查询） */
     content?: string;
@@ -341,6 +359,11 @@ export async function extractMemoryFromDocument(
         // Step 1: 获取文档内容
         const docContent = await tracker.track("获取文档内容", async () => {
             if (options.content) return options.content;
+            // filePath: 先尝试从磁盘读取，找不到则按路径查数据库
+            if (options.filePath) {
+                const fullPath = resolve(options.filePath);
+                if (existsSync(fullPath)) return readFileSync(fullPath, "utf-8");
+            }
             return fetchDocumentContent(dbPath, embedCfg, options, cfg, dims);
         });
 
