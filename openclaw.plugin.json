@@ -98,6 +98,11 @@
         "minimum": 500,
         "description": "记忆提取时每次发给 LLM 的最大字符数，默认 10000（≈5k tokens）"
       },
+      "llmTimeoutSeconds": {
+        "type": "integer",
+        "minimum": 30,
+        "description": "LLM 请求超时时间（秒），默认 300"
+      },
       "layerScoreConfig": {
         "type": "object",
         "description": "分层评分默认配置（应用于所有层）",

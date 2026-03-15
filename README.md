@@ -75,6 +75,7 @@ npm install
 | `chunkSize` | integer | 512 | 文档切分字符数 |
 | `chunkOverlap` | integer | 128 | 文档切分重叠字符数 |
 | `extractChunkSize` | integer | 10000 | 记忆提取时每次发给 LLM 的最大字符数（≈5k tokens） |
+| `llmTimeoutSeconds` | integer | 300 | LLM 请求超时时间（秒） |
 
 > 配置了 `rerankBaseUrl` + `rerankModel` + `rerankApiKey` 后，混合检索会自动启用 Reranker 重排序。
 

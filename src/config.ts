@@ -49,6 +49,7 @@ export const DEFAULT_EMBED_DIMENSIONS = 1536;
 export const DEFAULT_CHUNK_SIZE = 512;
 export const DEFAULT_CHUNK_OVERLAP = 128;
 export const DEFAULT_EXTRACT_CHUNK_SIZE = 10000; // ≈5k tokens
+export const DEFAULT_LLM_TIMEOUT_SECONDS = 300; // 5 分钟
 export const DEFAULT_FTS_COLUMNS = ["content"];
 export const DEFAULT_MEMORY_FTS_COLUMNS = ["content", "subject"];
 export const DEFAULT_DIARY_FTS_COLUMNS = ["content", "title"];
@@ -91,6 +92,7 @@ export type PluginConfig = {
     chunkSize?: number;
     chunkOverlap?: number;
     extractChunkSize?: number;
+    llmTimeoutSeconds?: number;
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
     watchPaths?: WatchPathConfig[];
@@ -136,7 +138,8 @@ export function getLlmConfig(api: any) {
     const model = cfg.llmModel?.trim();
     const apiKey = cfg.llmApiKey?.trim();
     if (!baseUrl || !model || !apiKey) return undefined;
-    return { baseUrl, model, apiKey };
+    const timeoutMs = (cfg.llmTimeoutSeconds ?? DEFAULT_LLM_TIMEOUT_SECONDS) * 1000;
+    return { baseUrl, model, apiKey, timeoutMs };
 }
 
 /**
@@ -144,10 +147,11 @@ export function getLlmConfig(api: any) {
  */
 export function getDistillLlmConfig(api: any) {
     const cfg = getPluginConfig(api);
+    const timeoutMs = (cfg.llmTimeoutSeconds ?? DEFAULT_LLM_TIMEOUT_SECONDS) * 1000;
     const baseUrl = cfg.distillLlmBaseUrl?.trim();
     const model = cfg.distillLlmModel?.trim();
     const apiKey = cfg.distillLlmApiKey?.trim();
-    if (baseUrl && model && apiKey) return { baseUrl, model, apiKey, enableThinking: false };
+    if (baseUrl && model && apiKey) return { baseUrl, model, apiKey, enableThinking: false, timeoutMs };
     // 回退到主 LLM 时也关闭思考模式（蒸馏不需要推理）
     const llm = getLlmConfig(api);
     return llm ? { ...llm, enableThinking: false } : undefined;

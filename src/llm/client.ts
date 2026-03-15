@@ -5,6 +5,7 @@ export type LlmConfig = {
     model: string;
     apiKey: string;
     enableThinking?: boolean;
+    timeoutMs?: number;
 };
 
 export type ChatMessage = {
@@ -24,14 +25,15 @@ export type LlmResult = {
 export async function chatCompletion(
     messages: ChatMessage[],
     cfg: LlmConfig,
-    options?: { temperature?: number; maxTokens?: number; stepName?: string },
+    options?: { temperature?: number; maxTokens?: number; stepName?: string; timeoutMs?: number },
 ): Promise<LlmResult> {
     const stepName = options?.stepName ?? "llm_call";
     const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     console.log(`[${stepName}] 请求 ${cfg.model} (${url})`);
 
+    const timeoutMs = options?.timeoutMs ?? cfg.timeoutMs ?? 300_000;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     let resp: Response;
     try {
@@ -53,7 +55,7 @@ export async function chatCompletion(
     } catch (err: any) {
         clearTimeout(timeout);
         if (err?.name === "AbortError") {
-            throw new Error(`[${stepName}] LLM 请求超时 (120s)`);
+            throw new Error(`[${stepName}] LLM 请求超时 (${Math.round(timeoutMs / 1000)}s)`);
         }
         throw err;
     } finally {
@@ -89,7 +91,7 @@ export async function chatCompletion(
 export async function chatCompletionJson<T>(
     messages: ChatMessage[],
     cfg: LlmConfig,
-    options?: { temperature?: number; maxTokens?: number; stepName?: string },
+    options?: { temperature?: number; maxTokens?: number; stepName?: string; timeoutMs?: number },
 ): Promise<{ data: T; usage: TokenUsage }> {
     const result = await chatCompletion(messages, cfg, options);
     const stepName = options?.stepName ?? "llm_call";
