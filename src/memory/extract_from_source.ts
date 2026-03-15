@@ -14,6 +14,7 @@ import {
     getLanceDbPath,
     getEmbedConfig,
     getLlmConfig,
+    getDistillLlmConfig,
     DEFAULT_EMBED_DIMENSIONS,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CHUNK_OVERLAP,
@@ -46,9 +47,10 @@ async function extractFromLongText(
     text: string,
     llmCfg: LlmConfig,
     tracker: ReturnType<typeof startTracker>,
+    distillCfg?: LlmConfig,
 ): Promise<ExtractionResult> {
     if (text.length <= MAX_EXTRACT_CHUNK_SIZE) {
-        return tracker.track("LLM记忆提取", () => extractMemories(text, llmCfg), `单段 ${text.length}字符`);
+        return tracker.track("LLM记忆提取", () => extractMemories(text, llmCfg, distillCfg), `单段 ${text.length}字符`);
     }
 
     // 分段提取
@@ -59,7 +61,7 @@ async function extractFromLongText(
         const chunk = chunks[i];
         const result = await tracker.track(
             `LLM记忆提取(${i + 1}/${chunks.length})`,
-            () => extractMemories(chunk.text, llmCfg),
+            () => extractMemories(chunk.text, llmCfg, distillCfg),
             `${chunk.text.length}字符`,
         );
         results.push(result);
@@ -171,6 +173,7 @@ export async function extractMemoryFromDiary(
     const cfg = getPluginConfig(api);
     const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
     const llmCfg = getLlmConfig(api) as LlmConfig | undefined;
+    const distillCfg = getDistillLlmConfig(api) as LlmConfig | undefined;
     if (!embedCfg || !llmCfg) throw new Error("Embedding or LLM config missing");
 
     const dims = cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
@@ -204,8 +207,8 @@ export async function extractMemoryFromDiary(
             throw new Error(msg);
         }
 
-        // Step 2: 分段提取四层记忆
-        const extraction = await extractFromLongText(diaryContent, llmCfg, tracker);
+        // Step 2: 分段提取四层记忆（两步：蒸馏 → 分类）
+        const extraction = await extractFromLongText(diaryContent, llmCfg, tracker, distillCfg);
 
         const totalExtracted =
             extraction.attitudes.length +
@@ -350,6 +353,7 @@ export async function extractMemoryFromDocument(
     const cfg = getPluginConfig(api);
     const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
     const llmCfg = getLlmConfig(api) as LlmConfig | undefined;
+    const distillCfg = getDistillLlmConfig(api) as LlmConfig | undefined;
     if (!embedCfg || !llmCfg) throw new Error("Embedding or LLM config missing");
 
     const dims = cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
@@ -371,8 +375,8 @@ export async function extractMemoryFromDocument(
             throw new Error("未找到符合条件的文档内容");
         }
 
-        // Step 2: 分段提取四层记忆
-        const extraction = await extractFromLongText(docContent, llmCfg, tracker);
+        // Step 2: 分段提取四层记忆（两步：蒸馏 → 分类）
+        const extraction = await extractFromLongText(docContent, llmCfg, tracker, distillCfg);
 
         const totalExtracted =
             extraction.attitudes.length +

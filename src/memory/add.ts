@@ -4,7 +4,7 @@ import { extractMemories } from "./extract";
 import { executeMemoryDecision, type DecisionSummary } from "../llm/decision";
 import { MemoryLayer, getTableForMemoryLayer } from "./layers";
 import { ensureTable } from "../db/schema";
-import { getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, DEFAULT_EMBED_DIMENSIONS } from "../config";
+import { getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, getDistillLlmConfig, DEFAULT_EMBED_DIMENSIONS } from "../config";
 import { startTracker, clearTracker } from "../tracker";
 
 export type AddMemoryResult = {
@@ -36,6 +36,7 @@ export async function addMemory(
     const cfg = getPluginConfig(api);
     const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
     const llmCfg = getLlmConfig(api) as LlmConfig | undefined;
+    const distillCfg = getDistillLlmConfig(api) as LlmConfig | undefined;
     if (!embedCfg || !llmCfg) throw new Error("Embedding or LLM config missing");
 
     const dims = cfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
@@ -50,9 +51,9 @@ export async function addMemory(
             }
         });
 
-        // Step 1: Extract memories from text
+        // Step 1: Extract memories from text (two-step: distill → classify)
         const extraction = await tracker.track("LLM记忆提取", () =>
-            extractMemories(inputText, llmCfg),
+            extractMemories(inputText, llmCfg, distillCfg),
             `输入长度: ${inputText.length}字符`,
         );
 

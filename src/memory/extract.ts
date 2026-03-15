@@ -1,5 +1,5 @@
 import { chatCompletionJson, type LlmConfig } from "../llm/client";
-import { buildMemoryExtractionMessages } from "../llm/prompts";
+import { buildDistillationMessages, buildClassificationMessages } from "../llm/prompts";
 
 export type ExtractedAttitude = {
     subject: string;
@@ -34,20 +34,36 @@ export type ExtractionResult = {
 };
 
 /**
- * Extract four types of memories from input text using LLM.
+ * Extract four types of memories from input text using two-step LLM calls:
+ * Step 1: Distillation (distillCfg) — raw text → atomic statements
+ * Step 2: Classification (classifyCfg) — statements → four memory layers
  */
 export async function extractMemories(
     inputText: string,
-    llmCfg: LlmConfig,
+    classifyCfg: LlmConfig,
+    distillCfg?: LlmConfig,
 ): Promise<ExtractionResult> {
-    const messages = buildMemoryExtractionMessages(inputText);
-    const { data: result } = await chatCompletionJson<ExtractionResult>(messages, llmCfg, {
+    // Step 1: Distillation
+    const distillMessages = buildDistillationMessages(inputText);
+    const { data: statements } = await chatCompletionJson<string[]>(distillMessages, distillCfg ?? classifyCfg, {
         temperature: 0.2,
         maxTokens: 4000,
-        stepName: "LLM记忆提取",
+        stepName: "LLM信息蒸馏",
     });
 
-    // Validate structure
+    const validStatements = Array.isArray(statements) ? statements.filter((s) => typeof s === "string" && s.trim()) : [];
+    if (validStatements.length === 0) {
+        return { attitudes: [], facts: [], knowledge: [], preferences: [] };
+    }
+
+    // Step 2: Classification
+    const classifyMessages = buildClassificationMessages(validStatements);
+    const { data: result } = await chatCompletionJson<ExtractionResult>(classifyMessages, classifyCfg, {
+        temperature: 0.2,
+        maxTokens: 4000,
+        stepName: "LLM记忆分类",
+    });
+
     return {
         attitudes: Array.isArray(result.attitudes) ? result.attitudes : [],
         facts: Array.isArray(result.facts) ? result.facts : [],

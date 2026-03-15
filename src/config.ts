@@ -83,6 +83,9 @@ export type PluginConfig = {
     llmBaseUrl?: string;
     llmModel?: string;
     llmApiKey?: string;
+    distillLlmBaseUrl?: string;
+    distillLlmModel?: string;
+    distillLlmApiKey?: string;
     channelWeightsPath?: string;
     chunkSize?: number;
     chunkOverlap?: number;
@@ -132,6 +135,18 @@ export function getLlmConfig(api: any) {
     const apiKey = cfg.llmApiKey?.trim();
     if (!baseUrl || !model || !apiKey) return undefined;
     return { baseUrl, model, apiKey };
+}
+
+/**
+ * 蒸馏专用 LLM 配置，未配置时回退到主 LLM 配置。
+ */
+export function getDistillLlmConfig(api: any) {
+    const cfg = getPluginConfig(api);
+    const baseUrl = cfg.distillLlmBaseUrl?.trim();
+    const model = cfg.distillLlmModel?.trim();
+    const apiKey = cfg.distillLlmApiKey?.trim();
+    if (baseUrl && model && apiKey) return { baseUrl, model, apiKey };
+    return getLlmConfig(api);
 }
 
 export function getRerankConfig(api: any) {

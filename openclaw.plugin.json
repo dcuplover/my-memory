@@ -67,6 +67,18 @@
         "type": "string",
         "description": "LLM 服务的 API Key"
       },
+      "distillLlmBaseUrl": {
+        "type": "string",
+        "description": "蒸馏专用 LLM 的 base URL（可选，未配置时使用主 LLM 配置）"
+      },
+      "distillLlmModel": {
+        "type": "string",
+        "description": "蒸馏专用 LLM 模型名称（可选，未配置时使用主 LLM 配置）"
+      },
+      "distillLlmApiKey": {
+        "type": "string",
+        "description": "蒸馏专用 LLM 的 API Key（可选，未配置时使用主 LLM 配置）"
+      },
       "channelWeightsPath": {
         "type": "string",
         "description": "渠道可信度权重 JSON 文件路径，默认为插件目录下 channel_weights.json"

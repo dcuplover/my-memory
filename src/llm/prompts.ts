@@ -43,30 +43,57 @@ ${layerList}
     return messages;
 }
 
-// ─── Memory Extraction Prompt ───
-// Extract four types of memories from input text.
+// ─── Step 1: Distillation Prompt ───
+// Distill raw text into atomic, valuable statements.
 
-export function buildMemoryExtractionMessages(inputText: string): ChatMessage[] {
-    const systemPrompt = `你是一个记忆提取系统。从给定的文本中提取以下四类记忆信息：
-
-1. **态度 (attitudes)**: 关于"我"对某事物的态度、看法、情感倾向
-   - 格式：{ "subject": "事物", "attitude": "态度描述", "content": "原始相关内容摘要" }
-
-2. **事实 (facts)**: 关于某事物是什么的概念定义
-   - 格式：{ "subject": "事物", "definition": "定义/解释", "content": "原始相关内容摘要" }
-
-3. **客观知识 (knowledge)**: 在什么情景下应该怎么做、不能怎么做
-   - 格式：{ "scenario": "情景描述", "action": "应该/不应该做什么", "content": "原始相关内容摘要" }
-
-4. **价值观选择 (preferences)**: 面对多条路径/方案时，基于价值观的决策倾向。体现在取舍和权衡中——例如更看重稳定性还是速度，更看重长远收益还是眼前效果
-   - 格式：{ "scenario": "决策情景", "options": "可选路径/方案", "preferred": "倾向选择及其价值观依据", "content": "原始相关内容摘要" }
+export function buildDistillationMessages(inputText: string): ChatMessage[] {
+    const systemPrompt = `你是一个信息蒸馏系统。从原始文本中提炼出有价值的原子化陈述。
 
 规则：
-- 仔细分析文本，提取所有可发现的记忆
-- 每条记忆应该是独立的、原子化的
-- content 字段是对原始文本中相关部分的简洁摘要
-- 如果某一类别没有发现相关信息，返回空数组
-- 使用与输入文本相同的语言
+- 去掉纯行为流水账（"然后我点击了…""接着他说了…"）
+- 合并重复表达（同一个意思说了多次的只保留一条）
+- 将长句拆分成独立的、简洁的单一含义陈述
+- 保留原意，不添加推测
+- 没有信息价值的内容直接丢弃
+
+输出 JSON 数组，每个元素是一条蒸馏后的陈述字符串：
+["陈述1", "陈述2", ...]
+如果没有任何有价值的内容，返回空数组 []。使用与输入文本相同的语言。`;
+
+    return [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: inputText },
+    ];
+}
+
+// ─── Step 2: Classification Prompt ───
+// Classify distilled statements into four memory layers.
+
+export function buildClassificationMessages(statements: string[]): ChatMessage[] {
+    const statementsText = statements.map((s, i) => `${i + 1}. ${s}`).join("\n");
+
+    const systemPrompt = `你是一个记忆分类系统。将以下陈述归入四类：
+
+1. **态度 (attitudes)**: "我"对某事物带有明确情感色彩的评价或倾向。必须包含喜欢/讨厌/欣赏/反感/认可/质疑等情感极性，纯粹的事实陈述、技术判断不算态度。
+   - ✅ "我觉得 LanceDB 的 API 设计很反直觉" — 有情感评价
+   - ✅ "我很喜欢 TypeScript 的类型系统" — 有情感倾向
+   - ❌ "JSON 标准不允许 trailing comma" — 事实，不是态度
+   - ❌ "发现 CLI 超时是因为递归回复" — 技术分析，不是态度
+   - 格式：{ "subject": "事物", "attitude": "带情感色彩的评价", "content": "原始陈述" }
+
+2. **事实 (facts)**: 关于某事物客观上"是什么"的信息。包括定义、状态、属性、因果关系、技术发现等。
+   - 格式：{ "subject": "事物", "definition": "定义/解释/发现", "content": "原始陈述" }
+
+3. **客观知识 (knowledge)**: 在什么情景下应该怎么做、不能怎么做的经验规则。
+   - 格式：{ "scenario": "情景描述", "action": "应该/不应该做什么", "content": "原始陈述" }
+
+4. **价值观选择 (preferences)**: 面对多条路径/方案时，基于价值观的决策倾向。体现在取舍和权衡中。
+   - 格式：{ "scenario": "决策情景", "options": "可选路径/方案", "preferred": "倾向选择及其价值观依据", "content": "原始陈述" }
+
+分类原则：
+- 态度必须有情感极性，去掉情感词后变成事实陈述的 → 归为事实
+- 不确定时，优先归为事实或知识
+- 无法归入任何类别的陈述，直接丢弃
 
 仅输出 JSON：
 {
@@ -74,11 +101,12 @@ export function buildMemoryExtractionMessages(inputText: string): ChatMessage[] 
   "facts": [...],
   "knowledge": [...],
   "preferences": [...]
-}`;
+}
+如果某一类别没有相关内容，返回空数组。使用与输入陈述相同的语言。`;
 
     return [
         { role: "system", content: systemPrompt },
-        { role: "user", content: inputText },
+        { role: "user", content: statementsText },
     ];
 }
 
