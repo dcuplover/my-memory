@@ -68,11 +68,16 @@ npm install
 | `rerankBaseUrl` | string | — | Rerank 服务 URL |
 | `rerankModel` | string | — | Rerank 模型名称 |
 | `rerankApiKey` | string | — | Rerank 服务 API Key |
+| `distillLlmBaseUrl` | string | — | 蒸馏专用 LLM 的 base URL（未配置时使用主 LLM） |
+| `distillLlmModel` | string | — | 蒸馏专用 LLM 模型名称 |
+| `distillLlmApiKey` | string | — | 蒸馏专用 LLM 的 API Key |
 | `channelWeightsPath` | string | 插件目录下 `channel_weights.json` | 渠道可信度权重文件路径 |
 | `chunkSize` | integer | 512 | 文档切分字符数 |
 | `chunkOverlap` | integer | 128 | 文档切分重叠字符数 |
 
 > 配置了 `rerankBaseUrl` + `rerankModel` + `rerankApiKey` 后，混合检索会自动启用 Reranker 重排序。
+
+> 配置了 `distillLlmBaseUrl` + `distillLlmModel` + `distillLlmApiKey` 后，信息蒸馏步骤将使用独立模型（可用便宜模型降低成本），分类步骤仍使用主 LLM。未配置时两步均使用主 LLM。
 
 ---
 
@@ -153,7 +158,9 @@ npm install
 ```
 输入文本
   ↓
-LLM 提取四类记忆（态度/事实/知识/偏好）
+【Step 1: 信息蒸馏】LLM 提炼原子化陈述（去流水账/合并重复/拆分长句）
+  ↓
+【Step 2: 分类归档】LLM 将陈述归入四类记忆（态度/事实/知识/偏好）
   ↓
 对每条提取结果生成 embedding
   ↓
@@ -168,6 +175,7 @@ LLM 决策：ADD / UPDATE / DELETE / NONE
 返回操作摘要（新增 N / 更新 M / 删除 K）
 ```
 
+其中 Step 1 和 Step 2 可配置使用不同的 LLM 模型（通过 `distillLlm*` 配置项）。
 这个流程参考了 Mem0 的两阶段记忆决策机制，能自动处理记忆的去重、更新和冲突删除。
 
 ---
