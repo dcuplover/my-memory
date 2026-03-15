@@ -103,6 +103,14 @@
         "minimum": 30,
         "description": "LLM 请求超时时间（秒），默认 300"
       },
+      "hooksBaseUrl": {
+        "type": "string",
+        "description": "OpenClaw Webhook 的 base URL（如 http://localhost:3000），配置后长任务将异步执行并通过 /hooks/wake 通知结果"
+      },
+      "hooksToken": {
+        "type": "string",
+        "description": "OpenClaw Webhook 的认证 token（对应 hooks.token 配置）"
+      },
       "layerScoreConfig": {
         "type": "object",
         "description": "分层评分默认配置（应用于所有层）",

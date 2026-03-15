@@ -93,6 +93,8 @@ export type PluginConfig = {
     chunkOverlap?: number;
     extractChunkSize?: number;
     llmTimeoutSeconds?: number;
+    hooksBaseUrl?: string;
+    hooksToken?: string;
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
     watchPaths?: WatchPathConfig[];
@@ -155,6 +157,19 @@ export function getDistillLlmConfig(api: any) {
     // 回退到主 LLM 时也关闭思考模式（蒸馏不需要推理）
     const llm = getLlmConfig(api);
     return llm ? { ...llm, enableThinking: false } : undefined;
+}
+
+export type HooksConfig = {
+    baseUrl: string;
+    token: string;
+};
+
+export function getHooksConfig(api: any): HooksConfig | undefined {
+    const cfg = getPluginConfig(api);
+    const baseUrl = cfg.hooksBaseUrl?.trim();
+    const token = cfg.hooksToken?.trim();
+    if (!baseUrl || !token) return undefined;
+    return { baseUrl, token };
 }
 
 export function getRerankConfig(api: any) {

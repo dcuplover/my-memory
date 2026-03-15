@@ -14,6 +14,7 @@ import {
     getPluginConfig,
     getEmbedConfig,
     getRerankConfig,
+    getHooksConfig,
     DEFAULT_RESULT_LIMIT,
     DEFAULT_TOP_K,
     DEFAULT_EMBED_DIMENSIONS,
@@ -23,6 +24,7 @@ import { LAYER_DESCRIPTIONS, FileLayer, getTableForFileLayer, MemoryLayer, ALL_M
 import type { EmbedConfig } from "./src/embedding";
 import type { RerankConfig } from "./src/search/reranker";
 import { FileWatcherService } from "./src/watcher";
+import { notifyViaWake } from "./src/hooks/notify";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
@@ -219,6 +221,20 @@ export default function (api: any) {
                 if (!text) return { text: "请提供要提取记忆的文本内容。" };
 
                 const channel = ctx.channel || "user_input";
+                const hooks = getHooksConfig(api);
+                if (hooks) {
+                    // 异步模式：立即返回，后台执行，完成后 webhook 通知
+                    (async () => {
+                        try {
+                            const result = await addMemory(api, text, channel);
+                            await notifyViaWake(hooks, `✅ 记忆添加完成：${formatAddResult(result)}`, api.logger);
+                        } catch (err) {
+                            await notifyViaWake(hooks, `❌ 记忆添加失败: ${String(err)}`, api.logger);
+                        }
+                    })();
+                    return { text: "⏳ 任务已启动，完成后会通知你。" };
+                }
+
                 const result = await addMemory(api, text, channel);
                 return { text: formatAddResult(result) };
             } catch (err) {
@@ -367,8 +383,22 @@ export default function (api: any) {
                 const date = ctx.date;
                 const sourceId = ctx.sourceId || ctx.source_id;
                 const force = ctx.force === true || ctx.force === "true";
+                const opts = { query: query || undefined, date, sourceId, force };
 
-                const result = await extractMemoryFromDiary(api, { query: query || undefined, date, sourceId, force });
+                const hooks = getHooksConfig(api);
+                if (hooks) {
+                    (async () => {
+                        try {
+                            const result = await extractMemoryFromDiary(api, opts);
+                            await notifyViaWake(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
+                        } catch (err) {
+                            await notifyViaWake(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
+                        }
+                    })();
+                    return { text: "⏳ 日记记忆提取任务已启动，完成后会通知你。" };
+                }
+
+                const result = await extractMemoryFromDiary(api, opts);
                 return { text: formatAddResult(result) };
             } catch (err) {
                 return { text: `从日记提取记忆失败: ${String(err)}` };
@@ -384,12 +414,26 @@ export default function (api: any) {
             try {
                 const content = ctx.prompt?.trim() || ctx.args?.trim();
                 const filePath = ctx.filePath || ctx.file_path;
-
-                const result = await extractMemoryFromDocument(api, {
+                const opts = {
                     content: content || undefined,
                     filePath,
                     query: !content ? filePath : undefined,
-                });
+                };
+
+                const hooks = getHooksConfig(api);
+                if (hooks) {
+                    (async () => {
+                        try {
+                            const result = await extractMemoryFromDocument(api, opts);
+                            await notifyViaWake(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
+                        } catch (err) {
+                            await notifyViaWake(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
+                        }
+                    })();
+                    return { text: "⏳ 文档记忆提取任务已启动，完成后会通知你。" };
+                }
+
+                const result = await extractMemoryFromDocument(api, opts);
                 return { text: formatAddResult(result) };
             } catch (err) {
                 return { text: `从文档提取记忆失败: ${String(err)}` };
@@ -435,6 +479,19 @@ export default function (api: any) {
         },
         async execute(_id: string, params: { text: string; channel?: string }) {
             try {
+                const hooks = getHooksConfig(api);
+                if (hooks) {
+                    (async () => {
+                        try {
+                            const result = await addMemory(api, params.text, params.channel || "daily_chat");
+                            await notifyViaWake(hooks, `✅ 记忆添加完成：${formatAddResult(result)}`, api.logger);
+                        } catch (err) {
+                            await notifyViaWake(hooks, `❌ 记忆添加失败: ${String(err)}`, api.logger);
+                        }
+                    })();
+                    return { content: [{ type: "text", text: "⏳ 任务已启动，完成后会通知你。" }] };
+                }
+
                 const result = await addMemory(api, params.text, params.channel || "daily_chat");
                 return { content: [{ type: "text", text: formatAddResult(result) }] };
             } catch (err) {
@@ -655,13 +712,28 @@ export default function (api: any) {
         },
         async execute(_id: string, params: { file_path?: string; query?: string; date?: string; source_id?: string; force?: boolean }) {
             try {
-                const result = await extractMemoryFromDiary(api, {
+                const opts = {
                     filePath: params.file_path,
                     query: params.query,
                     date: params.date,
                     sourceId: params.source_id,
                     force: params.force,
-                });
+                };
+
+                const hooks = getHooksConfig(api);
+                if (hooks) {
+                    (async () => {
+                        try {
+                            const result = await extractMemoryFromDiary(api, opts);
+                            await notifyViaWake(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
+                        } catch (err) {
+                            await notifyViaWake(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
+                        }
+                    })();
+                    return { content: [{ type: "text", text: "⏳ 日记记忆提取任务已启动，完成后会通知你。" }] };
+                }
+
+                const result = await extractMemoryFromDiary(api, opts);
                 return { content: [{ type: "text", text: formatAddResult(result) }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `从日记提取记忆失败: ${String(err)}` }] };
@@ -692,11 +764,26 @@ export default function (api: any) {
         },
         async execute(_id: string, params: { content?: string; file_path?: string; query?: string }) {
             try {
-                const result = await extractMemoryFromDocument(api, {
+                const opts = {
                     content: params.content,
                     filePath: params.file_path,
                     query: params.query,
-                });
+                };
+
+                const hooks = getHooksConfig(api);
+                if (hooks) {
+                    (async () => {
+                        try {
+                            const result = await extractMemoryFromDocument(api, opts);
+                            await notifyViaWake(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
+                        } catch (err) {
+                            await notifyViaWake(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
+                        }
+                    })();
+                    return { content: [{ type: "text", text: "⏳ 文档记忆提取任务已启动，完成后会通知你。" }] };
+                }
+
+                const result = await extractMemoryFromDocument(api, opts);
                 return { content: [{ type: "text", text: formatAddResult(result) }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `从文档提取记忆失败: ${String(err)}` }] };

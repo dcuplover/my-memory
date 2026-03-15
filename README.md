@@ -76,10 +76,14 @@ npm install
 | `chunkOverlap` | integer | 128 | 文档切分重叠字符数 |
 | `extractChunkSize` | integer | 10000 | 记忆提取时每次发给 LLM 的最大字符数（≈5k tokens） |
 | `llmTimeoutSeconds` | integer | 300 | LLM 请求超时时间（秒） |
+| `hooksBaseUrl` | string | — | OpenClaw Webhook base URL（如 `http://localhost:3000`），配置后长任务异步执行 |
+| `hooksToken` | string | — | OpenClaw Webhook 认证 token（对应 `hooks.token` 配置） |
 
 > 配置了 `rerankBaseUrl` + `rerankModel` + `rerankApiKey` 后，混合检索会自动启用 Reranker 重排序。
 
 > 配置了 `distillLlmBaseUrl` + `distillLlmModel` + `distillLlmApiKey` 后，信息蒸馏步骤将使用独立模型（可用便宜模型降低成本），分类步骤仍使用主 LLM。未配置时两步均使用主 LLM。
+
+> 配置了 `hooksBaseUrl` + `hooksToken` 后，`add_memory`、`extract_diary_memory`、`extract_document_memory` 三个长任务将 **异步执行**：命令立即返回"⏳ 任务已启动"，后台完成后通过 OpenClaw Webhook `/hooks/wake` 推送结果通知。未配置时保持同步行为。
 
 ---
 
@@ -315,6 +319,8 @@ my-memory/
     │   └── file.ts           # 文件库处理
     ├── embedding/
     │   └── index.ts          # Embedding API 调用
+    ├── hooks/
+    │   └── notify.ts         # Webhook 异步通知（/hooks/wake）
     ├── llm/
     │   ├── client.ts         # LLM API 客户端
     │   ├── decision.ts       # 记忆变更决策（两阶段）
