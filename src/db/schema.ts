@@ -7,6 +7,8 @@ import {
     DEFAULT_MEMORY_FTS_COLUMNS,
     DEFAULT_DIARY_FTS_COLUMNS,
     DEFAULT_DOCUMENT_FTS_COLUMNS,
+    MAX_MIGRATION_ROWS,
+    MIGRATION_BATCH_SIZE,
 } from "../config";
 
 // ─── Schema seed rows (one dummy row per table to define schema on creation) ───
@@ -132,11 +134,11 @@ async function migrateTableIfNeeded(
     }
 
     // Schema mismatch detected — migrate
-    // 1. Read all existing rows
+    // 1. Read existing rows (capped to prevent OOM)
     const zeroVec = new Array(dims).fill(0);
     let existingRows: LanceDbRow[];
     try {
-        existingRows = await table.search(zeroVec).limit(100000).toArray();
+        existingRows = await table.search(zeroVec).limit(MAX_MIGRATION_ROWS).toArray();
     } catch {
         existingRows = [];
     }
@@ -163,7 +165,7 @@ async function migrateTableIfNeeded(
         await newTable.delete(`id = '__seed__'`);
     } catch { /* non-critical */ }
 
-    // 4. Re-insert old rows: only copy seed-defined fields, convert vectors
+    // 4. Re-insert old rows in batches: only copy seed-defined fields, convert vectors
     if (existingRows.length > 0) {
         const migratedRows = existingRows.map((row) => {
             const migrated: LanceDbRow = {};
@@ -178,7 +180,11 @@ async function migrateTableIfNeeded(
             }
             return migrated;
         });
-        await newTable.add(migratedRows);
+        // Batch insert to avoid large single allocation
+        for (let i = 0; i < migratedRows.length; i += MIGRATION_BATCH_SIZE) {
+            const batch = migratedRows.slice(i, i + MIGRATION_BATCH_SIZE);
+            await newTable.add(batch);
+        }
     }
 
     // Clear FTS cache so indexes are rebuilt

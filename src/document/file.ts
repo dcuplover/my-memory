@@ -3,7 +3,7 @@ import { chatCompletion, type LlmConfig } from "../llm/client";
 import { buildDocumentSummaryMessages } from "../llm/prompts";
 import { addRecords } from "../db/crud";
 import { ensureTable } from "../db/schema";
-import { TABLE_NAMES, getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, getCredibility, DEFAULT_EMBED_DIMENSIONS } from "../config";
+import { TABLE_NAMES, getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, getCredibility, DEFAULT_EMBED_DIMENSIONS, MAX_CONTENT_JOIN_CHARS } from "../config";
 
 /**
  * Process a document for the file library:
@@ -32,8 +32,11 @@ export async function addDocument(
     // Ensure table exists
     await ensureTable(dbPath, TABLE_NAMES.DOCUMENT, dims);
 
-    // Step 1: Generate summary
-    const messages = buildDocumentSummaryMessages(content, title);
+    // Step 1: Generate summary (cap content to prevent huge LLM payloads)
+    const cappedContent = content.length > MAX_CONTENT_JOIN_CHARS
+        ? content.slice(0, MAX_CONTENT_JOIN_CHARS) + `\n[...截断：内容超过 ${MAX_CONTENT_JOIN_CHARS} 字符]`
+        : content;
+    const messages = buildDocumentSummaryMessages(cappedContent, title);
     const { content: summary } = await chatCompletion(messages, llmCfg, { temperature: 0.3, maxTokens: 1000 });
 
     // Step 2: Embed the summary

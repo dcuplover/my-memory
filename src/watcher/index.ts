@@ -2,9 +2,9 @@ import { watch, readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve, extname, basename, join } from "path";
 import { addDiary } from "../document/diary";
 import { addDocument } from "../document/file";
-import { extractMemoryFromDiary, extractMemoryFromDocument } from "../memory/extract_from_source";
+import { spawnExtractWorker } from "../worker/spawn";
 import { ensureTable } from "../db/schema";
-import { TABLE_NAMES, getLanceDbPath, getPluginConfig, DEFAULT_EMBED_DIMENSIONS, type WatchPathConfig } from "../config";
+import { TABLE_NAMES, getLanceDbPath, getPluginConfig, DEFAULT_EMBED_DIMENSIONS, MAX_FILE_READ_BYTES, MAX_SCAN_DEPTH, MAX_SCAN_FILES, type WatchPathConfig } from "../config";
 
 // ─── Types ───
 
@@ -175,16 +175,19 @@ export class FileWatcherService {
     }
 
     /**
-     * 递归列出目录下所有符合条件的文件
+     * 递归列出目录下所有符合条件的文件（带深度和数量限制）
      */
-    private listFiles(dir: string, config: WatchPathConfig): string[] {
+    private listFiles(dir: string, config: WatchPathConfig, depth: number = 0): string[] {
+        if (depth > MAX_SCAN_DEPTH) return [];
         const result: string[] = [];
         try {
             const entries = readdirSync(dir, { withFileTypes: true });
             for (const entry of entries) {
+                if (result.length >= MAX_SCAN_FILES) break;
                 const fullPath = join(dir, entry.name);
                 if (entry.isDirectory()) {
-                    result.push(...this.listFiles(fullPath, config));
+                    const sub = this.listFiles(fullPath, config, depth + 1);
+                    result.push(...sub);
                 } else if (this.isTargetFile(fullPath, config)) {
                     result.push(fullPath);
                 }
@@ -246,10 +249,17 @@ export class FileWatcherService {
         const fileName = basename(filePath);
 
         try {
+            const stat = statSync(filePath);
+
+            // 文件大小检查
+            if (stat.size > MAX_FILE_READ_BYTES) {
+                this.log(`文件过大，跳过: ${filePath} (${(stat.size / 1024 / 1024).toFixed(1)} MB > ${MAX_FILE_READ_BYTES / 1024 / 1024} MB)`);
+                return;
+            }
+
             const content = readFileSync(filePath, "utf-8");
             if (!content.trim()) return;
 
-            const stat = statSync(filePath);
             this.log(`处理文件: ${filePath} (类型=${config.type}, mtime=${new Date(stat.mtimeMs).toISOString()})`);
 
             if (config.type === "diary") {
@@ -258,16 +268,16 @@ export class FileWatcherService {
                 this.log(`日记已存储: ${fileName}，${chunksAdded} 个切片`);
 
                 if (config.autoExtract !== false) {
-                    const result = await extractMemoryFromDiary(this.api, { date, force: false });
-                    this.log(`日记记忆提取: +${result.totalAdded} ~${result.totalUpdated} -${result.totalDeleted}`);
+                    const { taskId } = spawnExtractWorker(this.api, { type: "diary", options: { date, force: false } });
+                    this.log(`日记记忆提取已派发: ${taskId}`);
                 }
             } else {
                 const { summary } = await addDocument(this.api, content, filePath, fileName);
                 this.log(`文档已存储: ${fileName}，摘要长度=${summary.length}`);
 
                 if (config.autoExtract !== false) {
-                    const result = await extractMemoryFromDocument(this.api, { content });
-                    this.log(`文档记忆提取: +${result.totalAdded} ~${result.totalUpdated} -${result.totalDeleted}`);
+                    const { taskId } = spawnExtractWorker(this.api, { type: "document", options: { content } });
+                    this.log(`文档记忆提取已派发: ${taskId}`);
                 }
             }
 

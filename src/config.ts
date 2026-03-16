@@ -56,6 +56,30 @@ export const DEFAULT_DIARY_FTS_COLUMNS = ["content", "title"];
 export const DEFAULT_DOCUMENT_FTS_COLUMNS = ["summary", "title"];
 export const VECTOR_RECALL_TOP_K = 5;
 
+// ─── Safety Limits (prevent OOM) ───
+/** 单次读取磁盘文件的最大字节数（10 MB） */
+export const MAX_FILE_READ_BYTES = 10 * 1024 * 1024;
+/** join() 拼接后的最大字符数（500 KB），超出截断 */
+export const MAX_CONTENT_JOIN_CHARS = 500_000;
+/** 日记按 source_id / date 查询的最大行数 */
+export const MAX_DIARY_CHUNK_ROWS = 500;
+/** 日记默认(全量)查询的最大行数 */
+export const MAX_DIARY_DEFAULT_ROWS = 2000;
+/** 文档查询的最大行数 */
+export const MAX_DOCUMENT_ROWS = 500;
+/** Schema 迁移单次读取的最大行数 */
+export const MAX_MIGRATION_ROWS = 5000;
+/** Schema 迁移批量写入的每批大小 */
+export const MIGRATION_BATCH_SIZE = 500;
+/** 文件监听递归目录的最大深度 */
+export const MAX_SCAN_DEPTH = 10;
+/** 文件监听单次扫描的最大文件数 */
+export const MAX_SCAN_FILES = 5000;
+/** 分类 prompt 中最大陈述数 */
+export const MAX_CLASSIFICATION_STATEMENTS = 200;
+/** 决策 prompt 中最大旧记忆候选数 */
+export const MAX_DECISION_OLD_MEMORIES = 100;
+
 // ─── Layer Score Config ───
 export type LayerScoreConfig = {
     scoreThreshold: number;
@@ -95,6 +119,8 @@ export type PluginConfig = {
     llmTimeoutSeconds?: number;
     hooksBaseUrl?: string;
     hooksToken?: string;
+    notifyChannel?: string;
+    notifyTarget?: string;
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
     watchPaths?: WatchPathConfig[];
@@ -170,6 +196,19 @@ export function getHooksConfig(api: any): HooksConfig | undefined {
     const token = cfg.hooksToken?.trim();
     if (!baseUrl || !token) return undefined;
     return { baseUrl, token };
+}
+
+export type NotifyConfig = {
+    channel: string;
+    target: string;
+};
+
+export function getNotifyConfig(api: any): NotifyConfig | undefined {
+    const cfg = getPluginConfig(api);
+    const channel = cfg.notifyChannel?.trim();
+    const target = cfg.notifyTarget?.trim();
+    if (!channel || !target) return undefined;
+    return { channel, target };
 }
 
 export function getRerankConfig(api: any) {

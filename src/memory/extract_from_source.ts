@@ -6,7 +6,7 @@ import { MemoryLayer, getTableForMemoryLayer } from "./layers";
 import { ensureTable } from "../db/schema";
 import { search } from "../search/hybrid";
 import { splitIntoChunks } from "../document/chunker";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 import { resolve, basename, extname } from "path";
 import {
     TABLE_NAMES,
@@ -21,12 +21,39 @@ import {
     DEFAULT_EXTRACT_CHUNK_SIZE,
     DEFAULT_RESULT_LIMIT,
     DEFAULT_TOP_K,
+    MAX_FILE_READ_BYTES,
+    MAX_CONTENT_JOIN_CHARS,
+    MAX_DIARY_CHUNK_ROWS,
+    MAX_DIARY_DEFAULT_ROWS,
+    MAX_DOCUMENT_ROWS,
 } from "../config";
 import { startTracker, clearTracker } from "../tracker";
 import type { AddMemoryResult } from "./add";
 
 // ─── 提取上限 ───
 const MAX_EXTRACT_CHUNK_OVERLAP = 200;
+
+/** 安全读取文件，检查大小上限 */
+function safeReadFile(fullPath: string): string {
+    const size = statSync(fullPath).size;
+    if (size > MAX_FILE_READ_BYTES) {
+        throw new Error(`文件过大 (${(size / 1024 / 1024).toFixed(1)} MB)，上限 ${MAX_FILE_READ_BYTES / 1024 / 1024} MB: ${fullPath}`);
+    }
+    return readFileSync(fullPath, "utf-8");
+}
+
+/** 安全拼接内容，超过上限时截断 */
+function safeJoin(parts: string[], separator: string): string {
+    let result = "";
+    for (const part of parts) {
+        if (result.length + separator.length + part.length > MAX_CONTENT_JOIN_CHARS) {
+            result += separator + `[...截断：已达 ${MAX_CONTENT_JOIN_CHARS} 字符上限]`;
+            break;
+        }
+        result += (result ? separator : "") + part;
+    }
+    return result;
+}
 
 /**
  * 合并多次提取的结果
@@ -189,7 +216,7 @@ export async function extractMemoryFromDiary(
             // 从磁盘文件读取
             const fullPath = resolve(options.filePath);
             if (!existsSync(fullPath)) throw new Error(`文件不存在: ${fullPath}`);
-            diaryContent = await tracker.track("读取磁盘文件", async () => readFileSync(fullPath, "utf-8"), fullPath);
+            diaryContent = await tracker.track("读取磁盘文件", async () => safeReadFile(fullPath), fullPath);
             processedSourceIds = [];
         } else {
             // 从数据库查询（默认只获取未提取过的）
@@ -267,11 +294,11 @@ async function fetchDiaryContent(
         const rows = await table
             .search(zeroVec)
             .where(`source_id = '${options.sourceId.replace(/'/g, "''")}'`)
-            .limit(1000)
+            .limit(MAX_DIARY_CHUNK_ROWS)
             .toArray();
         rows.sort((a: any, b: any) => (a.chunk_index ?? 0) - (b.chunk_index ?? 0));
         return {
-            content: rows.map((r: any) => r.content).join("\n"),
+            content: safeJoin(rows.map((r: any) => r.content), "\n"),
             sourceIds: [...new Set(rows.map((r: any) => r.source_id as string))],
         };
     }
@@ -283,11 +310,11 @@ async function fetchDiaryContent(
         const rows = await table
             .search(zeroVec)
             .where(filter)
-            .limit(1000)
+            .limit(MAX_DIARY_CHUNK_ROWS)
             .toArray();
         rows.sort((a: any, b: any) => (a.chunk_index ?? 0) - (b.chunk_index ?? 0));
         return {
-            content: rows.map((r: any) => r.content).join("\n"),
+            content: safeJoin(rows.map((r: any) => r.content), "\n"),
             sourceIds: [...new Set(rows.map((r: any) => r.source_id as string))],
         };
     }
@@ -305,7 +332,7 @@ async function fetchDiaryContent(
         });
         const filtered = onlyNew ? results.filter((r: any) => !r.extracted) : results;
         return {
-            content: filtered.map((r: any) => r.content).join("\n\n"),
+            content: safeJoin(filtered.map((r: any) => r.content), "\n\n"),
             sourceIds: [...new Set(filtered.map((r: any) => r.source_id as string).filter(Boolean))],
         };
     }
@@ -313,9 +340,9 @@ async function fetchDiaryContent(
     // 默认：获取未提取过的日记（force=true 时获取全部）
     let rows: any[];
     if (onlyNew) {
-        rows = await table.search(zeroVec).where("extracted = false").limit(10000).toArray();
+        rows = await table.search(zeroVec).where("extracted = false").limit(MAX_DIARY_DEFAULT_ROWS).toArray();
     } else {
-        rows = await table.search(zeroVec).limit(10000).toArray();
+        rows = await table.search(zeroVec).limit(MAX_DIARY_DEFAULT_ROWS).toArray();
     }
     rows.sort((a: any, b: any) => {
         const dateCompare = String(a.date ?? "").localeCompare(String(b.date ?? ""));
@@ -323,7 +350,7 @@ async function fetchDiaryContent(
         return (a.chunk_index ?? 0) - (b.chunk_index ?? 0);
     });
     return {
-        content: rows.map((r: any) => r.content).join("\n"),
+        content: safeJoin(rows.map((r: any) => r.content), "\n"),
         sourceIds: [...new Set(rows.map((r: any) => r.source_id as string))],
     };
 }
@@ -368,7 +395,7 @@ export async function extractMemoryFromDocument(
             // filePath: 先尝试从磁盘读取，找不到则按路径查数据库
             if (options.filePath) {
                 const fullPath = resolve(options.filePath);
-                if (existsSync(fullPath)) return readFileSync(fullPath, "utf-8");
+                if (existsSync(fullPath)) return safeReadFile(fullPath);
             }
             return fetchDocumentContent(dbPath, embedCfg, options, cfg, dims);
         });
@@ -416,7 +443,7 @@ async function fetchDocumentContent(
             .limit(100)
             .toArray();
         // 文档存的是 summary，拼接所有匹配文档的摘要
-        return rows.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`).join("\n\n");
+        return safeJoin(rows.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`), "\n\n");
     }
 
     if (options.query) {
@@ -429,12 +456,12 @@ async function fetchDocumentContent(
             topK: cfg.topK ?? DEFAULT_TOP_K,
             embedCfg,
         });
-        return results.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`).join("\n\n");
+        return safeJoin(results.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`), "\n\n");
     }
 
     // 默认：全部文档
-    const rows = await table.search(zeroVec).limit(10000).toArray();
-    return rows.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`).join("\n\n");
+    const rows = await table.search(zeroVec).limit(MAX_DOCUMENT_ROWS).toArray();
+    return safeJoin(rows.map((r: any) => `【${r.title || "未命名"}】\n${r.summary}`), "\n\n");
 }
 
 // ─── 空结果 helper ───

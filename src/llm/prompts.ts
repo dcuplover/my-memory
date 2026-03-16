@@ -1,4 +1,5 @@
 import { MemoryLayer, FileLayer, LAYER_DESCRIPTIONS } from "../memory/layers";
+import { MAX_CLASSIFICATION_STATEMENTS, MAX_DECISION_OLD_MEMORIES } from "../config";
 import type { ChatMessage } from "./client";
 
 // ─── Layer Selection Prompt ───
@@ -72,7 +73,8 @@ export function buildDistillationMessages(inputText: string): ChatMessage[] {
 // Classify distilled statements into four memory layers.
 
 export function buildClassificationMessages(statements: string[]): ChatMessage[] {
-    const statementsText = statements.map((s, i) => `${i + 1}. ${s}`).join("\n");
+    const capped = statements.slice(0, MAX_CLASSIFICATION_STATEMENTS);
+    const statementsText = capped.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
     const systemPrompt = `你是一个记忆分类系统。将以下陈述归入四类：
 
@@ -134,8 +136,9 @@ export function buildMemoryDecisionMessages(
     newFacts: string[],
     oldMemories: OldMemoryCandidate[],
 ): ChatMessage[] {
-    const oldMemoryList = oldMemories.length > 0
-        ? oldMemories.map((m) => `[${m.shortId}] ${m.content}`).join("\n")
+    const cappedOld = oldMemories.slice(0, MAX_DECISION_OLD_MEMORIES);
+    const oldMemoryList = cappedOld.length > 0
+        ? cappedOld.map((m) => `[${m.shortId}] ${m.content}`).join("\n")
         : "(无现有相关记忆)";
 
     const newFactsList = newFacts.map((f, i) => `${i + 1}. ${f}`).join("\n");

@@ -2,7 +2,6 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, extname, basename } from "path";
 import { queryMemory } from "./src/memory/query";
 import { addMemory, formatAddResult } from "./src/memory/add";
-import { extractMemoryFromDiary, extractMemoryFromDocument } from "./src/memory/extract_from_source";
 import { addDiary } from "./src/document/diary";
 import { addDocument } from "./src/document/file";
 import { ensureAllTables, ensureTable } from "./src/db/schema";
@@ -27,6 +26,7 @@ import type { EmbedConfig } from "./src/embedding";
 import type { RerankConfig } from "./src/search/reranker";
 import { FileWatcherService } from "./src/watcher";
 import { notifyViaHooks } from "./src/hooks/notify";
+import { spawnExtractWorker } from "./src/worker/spawn";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
@@ -387,21 +387,8 @@ export default function (api: any) {
                 const force = ctx.force === true || ctx.force === "true";
                 const opts = { query: query || undefined, date, sourceId, force };
 
-                const hooks = getHooksConfig(api);
-                if (hooks) {
-                    (async () => {
-                        try {
-                            const result = await extractMemoryFromDiary(api, opts);
-                            await notifyViaHooks(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
-                        } catch (err) {
-                            await notifyViaHooks(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
-                        }
-                    })();
-                    return { text: "⏳ 日记记忆提取任务已启动，完成后会通知你。" };
-                }
-
-                const result = await extractMemoryFromDiary(api, opts);
-                return { text: formatAddResult(result) };
+                const { taskId } = spawnExtractWorker(api, { type: "diary", options: opts });
+                return { text: `⏳ 日记记忆提取任务已派发到独立进程 (${taskId})，完成后会通知你。` };
             } catch (err) {
                 return { text: `从日记提取记忆失败: ${String(err)}` };
             }
@@ -422,21 +409,8 @@ export default function (api: any) {
                     query: !content ? filePath : undefined,
                 };
 
-                const hooks = getHooksConfig(api);
-                if (hooks) {
-                    (async () => {
-                        try {
-                            const result = await extractMemoryFromDocument(api, opts);
-                            await notifyViaHooks(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
-                        } catch (err) {
-                            await notifyViaHooks(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
-                        }
-                    })();
-                    return { text: "⏳ 文档记忆提取任务已启动，完成后会通知你。" };
-                }
-
-                const result = await extractMemoryFromDocument(api, opts);
-                return { text: formatAddResult(result) };
+                const { taskId } = spawnExtractWorker(api, { type: "document", options: opts });
+                return { text: `⏳ 文档记忆提取任务已派发到独立进程 (${taskId})，完成后会通知你。` };
             } catch (err) {
                 return { text: `从文档提取记忆失败: ${String(err)}` };
             }
@@ -722,21 +696,8 @@ export default function (api: any) {
                     force: params.force,
                 };
 
-                const hooks = getHooksConfig(api);
-                if (hooks) {
-                    (async () => {
-                        try {
-                            const result = await extractMemoryFromDiary(api, opts);
-                            await notifyViaHooks(hooks, `✅ 日记记忆提取完成：${formatAddResult(result)}`, api.logger);
-                        } catch (err) {
-                            await notifyViaHooks(hooks, `❌ 日记记忆提取失败: ${String(err)}`, api.logger);
-                        }
-                    })();
-                    return { content: [{ type: "text", text: "⏳ 日记记忆提取任务已启动，完成后会通知你。" }] };
-                }
-
-                const result = await extractMemoryFromDiary(api, opts);
-                return { content: [{ type: "text", text: formatAddResult(result) }] };
+                const { taskId } = spawnExtractWorker(api, { type: "diary", options: opts });
+                return { content: [{ type: "text", text: `⏳ 日记记忆提取任务已派发到独立进程 (${taskId})，完成后会通知你。` }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `从日记提取记忆失败: ${String(err)}` }] };
             }
@@ -772,21 +733,8 @@ export default function (api: any) {
                     query: params.query,
                 };
 
-                const hooks = getHooksConfig(api);
-                if (hooks) {
-                    (async () => {
-                        try {
-                            const result = await extractMemoryFromDocument(api, opts);
-                            await notifyViaHooks(hooks, `✅ 文档记忆提取完成：${formatAddResult(result)}`, api.logger);
-                        } catch (err) {
-                            await notifyViaHooks(hooks, `❌ 文档记忆提取失败: ${String(err)}`, api.logger);
-                        }
-                    })();
-                    return { content: [{ type: "text", text: "⏳ 文档记忆提取任务已启动，完成后会通知你。" }] };
-                }
-
-                const result = await extractMemoryFromDocument(api, opts);
-                return { content: [{ type: "text", text: formatAddResult(result) }] };
+                const { taskId } = spawnExtractWorker(api, { type: "document", options: opts });
+                return { content: [{ type: "text", text: `⏳ 文档记忆提取任务已派发到独立进程 (${taskId})，完成后会通知你。` }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `从文档提取记忆失败: ${String(err)}` }] };
             }

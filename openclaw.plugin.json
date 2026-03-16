@@ -111,6 +111,14 @@
         "type": "string",
         "description": "OpenClaw Webhook 的认证 token（对应 hooks.token 配置）"
       },
+      "notifyChannel": {
+        "type": "string",
+        "description": "后台任务完成后通知的渠道名称（用于 openclaw message send --channel），例如 telegram、feishu"
+      },
+      "notifyTarget": {
+        "type": "string",
+        "description": "通知目标标识（用于 openclaw message send --target），例如 Telegram 群 chat_id 或飞书群 ID"
+      },
       "layerScoreConfig": {
         "type": "object",
         "description": "分层评分默认配置（应用于所有层）",
