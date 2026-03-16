@@ -5,6 +5,8 @@ declare module "fs" {
     export function existsSync(path: string): boolean;
     export function readdirSync(path: string, options?: { withFileTypes: true }): Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
     export function statSync(path: string): { mtimeMs: number; size: number };
+    export function openSync(path: string, flags: string): number;
+    export function closeSync(fd: number): void;
     export function watch(
         path: string,
         options: { recursive?: boolean },
@@ -25,7 +27,7 @@ declare module "child_process" {
     export interface SpawnOptions {
         cwd?: string;
         env?: Record<string, string | undefined>;
-        stdio?: string | Array<string | null>;
+        stdio?: string | number | Array<string | number | null>;
         detached?: boolean;
         shell?: boolean;
     }

@@ -119,6 +119,10 @@
         "type": "string",
         "description": "通知目标标识（用于 openclaw message send --target），例如 Telegram 群 chat_id 或飞书群 ID"
       },
+      "notifyAccount": {
+        "type": "string",
+        "description": "通知使用的账号名称（用于 openclaw message send --account），例如 feishu-bot、my-telegram"
+      },
       "layerScoreConfig": {
         "type": "object",
         "description": "分层评分默认配置（应用于所有层）",

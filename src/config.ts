@@ -121,6 +121,7 @@ export type PluginConfig = {
     hooksToken?: string;
     notifyChannel?: string;
     notifyTarget?: string;
+    notifyAccount?: string;
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
     watchPaths?: WatchPathConfig[];
@@ -201,6 +202,7 @@ export function getHooksConfig(api: any): HooksConfig | undefined {
 export type NotifyConfig = {
     channel: string;
     target: string;
+    account?: string;
 };
 
 export function getNotifyConfig(api: any): NotifyConfig | undefined {
@@ -208,7 +210,8 @@ export function getNotifyConfig(api: any): NotifyConfig | undefined {
     const channel = cfg.notifyChannel?.trim();
     const target = cfg.notifyTarget?.trim();
     if (!channel || !target) return undefined;
-    return { channel, target };
+    const account = cfg.notifyAccount?.trim();
+    return { channel, target, ...(account ? { account } : {}) };
 }
 
 export function getRerankConfig(api: any) {

@@ -55,7 +55,8 @@ function sendNotification(notify: NotifyConfig | undefined, message: string): vo
     }
     try {
         const safeMsg = message.replace(/"/g, '\\"');
-        const cmd = `openclaw message send --channel "${notify.channel}" --target "${notify.target}" --message "${safeMsg}"`;
+        const accountFlag = notify.account ? ` --account "${notify.account}"` : "";
+        const cmd = `openclaw message send --channel "${notify.channel}" --target "${notify.target}"${accountFlag} --message "${safeMsg}"`;
         console.log("[worker] 执行通知:", cmd);
         execSync(cmd, { encoding: "utf-8", timeout: 30_000 });
         console.log("[worker] 通知已发送");

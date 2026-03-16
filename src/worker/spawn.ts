@@ -7,7 +7,7 @@
  * 3. spawn("npx", ["tsx", "extract-runner.ts", taskPath]) detached
  * 4. 立即返回 taskId
  */
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync, openSync, closeSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
@@ -77,20 +77,28 @@ export function spawnExtractWorker(api: any, opts: SpawnExtractOptions): SpawnRe
     // 写入 task 文件
     writeFileSync(taskPath, JSON.stringify(task, null, 2), "utf-8");
 
-    // 启动独立进程
+    // 日志文件：与 task JSON 同目录，方便查看
+    const logPath = join(taskDir, `${taskId}.log`);
+    const logFd = openSync(logPath, "a");
+
+    // 启动独立进程，stdout/stderr 重定向到日志文件
     const workerPath = getWorkerPath();
     const child = spawn("npx", ["tsx", workerPath, taskPath], {
         cwd: resolve(__dirname, "../.."),  // 插件根目录，确保 node_modules 可用
         detached: true,
-        stdio: "ignore",   // 完全脱离主进程 IO
+        stdio: ["ignore", logFd, logFd],   // stdin=ignore, stdout+stderr → log file
     });
 
     // 让子进程脱离父进程（主进程退出不影响子进程）
     child.unref();
 
+    // 主进程释放 fd，子进程已继承，不影响写入
+    closeSync(logFd);
+
     const logger = api.logger;
     logger?.info?.(`[spawn] 提取任务已派发: ${taskId} (type=${opts.type}, pid=${child.pid})`);
     logger?.info?.(`[spawn] task file: ${taskPath}`);
+    logger?.info?.(`[spawn] log file: ${logPath}`);
     logger?.info?.(`[spawn] worker: npx tsx ${workerPath}`);
 
     return { taskId, taskPath };
