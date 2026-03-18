@@ -7,7 +7,8 @@ let _dbPath: string | null = null;
 export async function getGraphConnection(dbPath: string): Promise<InstanceType<typeof Connection>> {
     if (_conn && _dbPath === dbPath) return _conn;
     await closeGraphConnection();
-    _db = new Database(dbPath);
+    // 指定 bufferPoolSize 256MB，避免 Kuzu 默认请求 8TB mmap 导致 OOM
+    _db = new Database(dbPath, 256 * 1024 * 1024);
     _conn = new Connection(_db);
     _dbPath = dbPath;
     return _conn;
