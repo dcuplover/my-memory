@@ -5,9 +5,13 @@
   "description": "OpenClaw 分层记忆插件 — 基于 LanceDB 的混合检索记忆系统",
   "dependencies": {
     "@lancedb/lancedb": "^0.22.1",
-    "kuzu": "^0.11.3"
+    "@mozilla/readability": "^0.6.0",
+    "kuzu": "^0.11.3",
+    "linkedom": "^0.18.12"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

@@ -109,3 +109,14 @@ declare module "@lancedb/lancedb" {
 
     export function connect(uri: string): Promise<LanceDbConnection>;
 }
+
+declare module "@mozilla/readability" {
+    export class Readability {
+        constructor(document: any);
+        parse(): { title: string; textContent: string; content: string; excerpt: string } | null;
+    }
+}
+
+declare module "linkedom" {
+    export function parseHTML(html: string): { document: any; window: any };
+}

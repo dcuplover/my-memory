@@ -44,7 +44,7 @@ function getWorkerPath(): string {
 // ─── 公共接口 ───
 
 export type SpawnExtractOptions = {
-    type: "diary" | "document";
+    type: "diary" | "document" | "url";
     options: Record<string, unknown>;
 };
 

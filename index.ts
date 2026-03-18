@@ -4,6 +4,8 @@ import { queryMemory } from "./src/memory/query";
 import { addMemory, formatAddResult } from "./src/memory/add";
 import { addDiary } from "./src/document/diary";
 import { addDocument } from "./src/document/file";
+import { fetchUrl } from "./src/document/url";
+import { deepSummarize } from "./src/document/summarize";
 import { ensureAllTables, ensureTable } from "./src/db/schema";
 import { countRows } from "./src/db/crud";
 import { search, type SearchMode } from "./src/search/hybrid";
@@ -302,6 +304,49 @@ export default function (api: any) {
                 return { text: `文档处理完成。\n摘要：${result.summary.slice(0, 200)}...` };
             } catch (err) {
                 return { text: `添加文档失败: ${String(err)}` };
+            }
+        },
+    });
+
+    // /fetch_url — 抓取 URL 内容
+    api.registerCommand({
+        name: "fetch_url",
+        description: "抓取 URL 并提取文章正文内容",
+        async handler(ctx: any) {
+            try {
+                const url = ctx.prompt?.trim() || ctx.args?.trim();
+                if (!url) return { text: "请提供要抓取的 URL。" };
+
+                const result = await fetchUrl(url);
+                const preview = result.content.length > 2000
+                    ? result.content.slice(0, 2000) + `\n\n[...截断，共 ${result.length} 字符]`
+                    : result.content;
+                return { text: `## ${result.title}\n\n${preview}` };
+            } catch (err) {
+                return { text: `URL 抓取失败: ${String(err)}` };
+            }
+        },
+    });
+
+    // /learn_from_url — 从 URL 学习知识（完整流程）
+    api.registerCommand({
+        name: "learn_from_url",
+        description: "从 URL 学习知识：抓取文章 → 深度总结 → 保存文档 → 提取四层记忆 + 图谱关系",
+        async handler(ctx: any) {
+            try {
+                const url = ctx.prompt?.trim() || ctx.args?.trim();
+                if (!url) return { text: "请提供要学习的文章 URL。" };
+
+                const title = ctx.title;
+                const autoExtract = ctx.autoExtract !== false;
+
+                const { taskId } = spawnExtractWorker(api, {
+                    type: "url",
+                    options: { url, title, autoExtract },
+                });
+                return { text: `⏳ URL 学习任务已派发 (${taskId})，完成后会通知你。\nURL: ${url}` };
+            } catch (err) {
+                return { text: `URL 学习启动失败: ${String(err)}` };
             }
         },
     });
@@ -740,6 +785,82 @@ export default function (api: any) {
                 return { content: [{ type: "text", text: `⏳ 文档记忆提取任务已派发到独立进程 (${taskId})，完成后会通知你。` }] };
             } catch (err) {
                 return { content: [{ type: "text", text: `从文档提取记忆失败: ${String(err)}` }] };
+            }
+        },
+    });
+
+    // fetch_url tool
+    api.registerTool({
+        name: "fetch_url",
+        description: "抓取 URL 并提取文章正文内容。返回文章标题和干净的纯文本。用于预览网页内容，或作为其他工具的输入。",
+        parameters: {
+            type: "object",
+            properties: {
+                url: {
+                    type: "string",
+                    description: "要抓取的 URL（http/https）",
+                },
+            },
+            required: ["url"],
+        },
+        async execute(_id: string, params: { url: string }) {
+            try {
+                const result = await fetchUrl(params.url);
+                const preview = result.content.length > 3000
+                    ? result.content.slice(0, 3000) + `\n\n[...截断，共 ${result.length} 字符]`
+                    : result.content;
+                return {
+                    content: [{
+                        type: "text",
+                        text: `标题: ${result.title}\nURL: ${result.url}\n字符数: ${result.length}\n\n${preview}`,
+                    }],
+                };
+            } catch (err) {
+                return { content: [{ type: "text", text: `URL 抓取失败: ${String(err)}` }] };
+            }
+        },
+    });
+
+    // learn_from_url tool
+    api.registerTool({
+        name: "learn_from_url",
+        description: "从 URL 学习知识（完整流程）：抓取文章 → 深度总结（不丢失核心信息）→ 保存为文档 → 提取四层记忆（态度/事实/知识/价值观）+ 图谱实体关系。任务异步执行，完成后通知。",
+        parameters: {
+            type: "object",
+            properties: {
+                url: {
+                    type: "string",
+                    description: "要学习的文章 URL（http/https）",
+                },
+                title: {
+                    type: "string",
+                    description: "自定义文章标题（可选，默认从网页提取）",
+                },
+                auto_extract: {
+                    type: "boolean",
+                    description: "是否自动提取四层记忆和图谱关系，默认 true",
+                },
+            },
+            required: ["url"],
+        },
+        async execute(_id: string, params: { url: string; title?: string; auto_extract?: boolean }) {
+            try {
+                const { taskId } = spawnExtractWorker(api, {
+                    type: "url",
+                    options: {
+                        url: params.url,
+                        title: params.title,
+                        autoExtract: params.auto_extract !== false,
+                    },
+                });
+                return {
+                    content: [{
+                        type: "text",
+                        text: `⏳ URL 学习任务已派发到独立进程 (${taskId})，完成后会通知你。\nURL: ${params.url}`,
+                    }],
+                };
+            } catch (err) {
+                return { content: [{ type: "text", text: `URL 学习启动失败: ${String(err)}` }] };
             }
         },
     });

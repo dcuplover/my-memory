@@ -251,3 +251,84 @@ export function buildContextAssemblyMessages(
         { role: "user", content: `用户问题：${userQuery}\n\n检索到的记忆：\n${memoryResults}` },
     ];
 }
+
+// ─── Deep Article Summary Prompts ───
+
+type PartInfo = {
+    partIndex: number;
+    totalParts: number;
+};
+
+/**
+ * 构建深度总结 prompt。
+ * 与 buildDocumentSummaryMessages 不同，这里要求保留所有核心信息，不丢失关键细节。
+ */
+export function buildDeepSummaryMessages(
+    content: string,
+    title?: string,
+    partInfo?: PartInfo,
+): ChatMessage[] {
+    const partHint = partInfo
+        ? `\n\n注意：这是一篇长文的第 ${partInfo.partIndex}/${partInfo.totalParts} 部分。请提取本段中所有核心要点，后续会将各段合并为完整总结。`
+        : "";
+
+    const systemPrompt = `你是一个专业的文章深度总结系统。你的任务是对文章进行全面、准确的总结，确保不丢失任何核心信息。
+
+总结要求：
+1. **保留关键数据和数字**：统计数据、百分比、指标、性能数字等不可省略
+2. **保留核心论点和结论**：作者的主要观点、论证逻辑、最终结论必须完整呈现
+3. **保留因果关系**：问题→原因→解决方案的链条必须清晰
+4. **保留专有名词和技术概念**：首次出现时附带简要解释
+5. **保留实践建议和最佳实践**：可操作的具体建议不可丢弃
+6. **保留对比和权衡**：方案对比、优缺点分析等决策信息完整保留
+
+输出格式（Markdown）：
+- 使用层级标题组织内容（## 主题 / ### 子主题）
+- 核心观点用要点列表
+- 重要数据/代码片段保留原文
+- 使用与原文相同的语言${partHint}
+
+直接输出总结文本，不要附加额外说明。`;
+
+    const userContent = title ? `标题：${title}\n\n${content}` : content;
+
+    return [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+    ];
+}
+
+/**
+ * 构建合并总结 prompt（Map-Reduce 的 Reduce 阶段）。
+ * 将多段分段总结合并为一份完整的深度总结。
+ */
+export function buildMergeSummaryMessages(
+    chunkSummaries: string[],
+    title?: string,
+): ChatMessage[] {
+    const systemPrompt = `你是一个文章总结合并系统。你将收到一篇长文各段的独立总结，请将它们合并为一份完整、连贯、不重复的深度总结。
+
+合并要求：
+1. **去重**：不同段落可能重复提及的信息只保留一次
+2. **保持完整**：每段总结中的唯一信息都必须保留，不可因合并而丢失
+3. **逻辑连贯**：按文章逻辑重新组织结构，而非简单拼接
+4. **保留所有关键细节**：数据、结论、因果关系、技术概念、实践建议全部保留
+
+输出格式（Markdown）：
+- 使用层级标题组织（## / ###）
+- 核心观点用要点列表
+- 保留重要数据和代码片段
+- 使用与原文相同的语言
+
+直接输出合并后的完整总结，不要附加额外说明。`;
+
+    const titleHint = title ? `文章标题：${title}\n\n` : "";
+    const summaryParts = chunkSummaries
+        .map((s, i) => `--- 第 ${i + 1} 段总结 ---\n${s}`)
+        .join("\n\n");
+
+    return [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `${titleHint}以下是各段的独立总结，请合并为一份完整总结：\n\n${summaryParts}` },
+    ];
+}
