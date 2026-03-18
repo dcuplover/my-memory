@@ -34,7 +34,8 @@ export async function withGraphConnection<T>(
             await sleep(RETRY_BASE_MS * (attempt + 1));
         } finally {
             try { conn?.close(); } catch {}
-            try { await db?.close(); } catch {}
+            // 不调用 db.close()：KùzuDB v0.11.x Node 绑定在 close 时触发 SIGSEGV，
+            // 让 Database 对象由 GC / 进程退出自然回收，避免段错误杀死进程。
         }
     }
     throw lastError;
