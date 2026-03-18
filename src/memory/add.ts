@@ -4,8 +4,9 @@ import { extractMemories } from "./extract";
 import { executeMemoryDecision, type DecisionSummary } from "../llm/decision";
 import { MemoryLayer, getTableForMemoryLayer } from "./layers";
 import { ensureTable } from "../db/schema";
-import { getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, getDistillLlmConfig, DEFAULT_EMBED_DIMENSIONS } from "../config";
+import { getPluginConfig, getLanceDbPath, getEmbedConfig, getLlmConfig, getDistillLlmConfig, getKuzuDbPath, DEFAULT_EMBED_DIMENSIONS } from "../config";
 import { startTracker, clearTracker } from "../tracker";
+import { extractAndStoreTriples } from "../graph/extract";
 
 export type AddMemoryResult = {
     attitudes: DecisionSummary;
@@ -56,6 +57,19 @@ export async function addMemory(
             extractMemories(inputText, llmCfg, distillCfg),
             `输入长度: ${inputText.length}字符`,
         );
+
+        // Step 1.5: Extract and store graph triples
+        const kuzuPath = getKuzuDbPath(api);
+        if (kuzuPath) {
+            await tracker.track("图谱三元组", async () => {
+                try {
+                    const gr = await extractAndStoreTriples(kuzuPath, extraction, llmCfg);
+                    return `提取${gr.extracted}条，存储${gr.stored}条`;
+                } catch (err) {
+                    api.logger?.warn?.(`图谱三元组提取失败: ${err}`);
+                }
+            });
+        }
 
         // Step 2 & 3: Decision + CRUD for each layer
         const attitudesFacts = extraction.attitudes.map((a) => ({

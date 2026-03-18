@@ -11,6 +11,10 @@
         "type": "string",
         "description": "LanceDB 数据库文件夹路径"
       },
+      "kuzuDbPath": {
+        "type": "string",
+        "description": "Kuzu 图数据库文件夹路径（可选，默认为 {lanceDbPath}_graph）"
+      },
       "ftsColumns": {
         "type": "array",
         "items": { "type": "string" },

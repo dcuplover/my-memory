@@ -1,5 +1,5 @@
 import { search, type SearchMode, type SearchResult } from "../search/hybrid";
-import { formatMemoryResults, formatFileSummary, assembleContext } from "../formatter";
+import { formatMemoryResults, formatFileSummary, formatGraphExpansion, assembleContext } from "../formatter";
 import {
     MemoryLayer,
     FileLayer,
@@ -11,6 +11,7 @@ import {
 import {
     getPluginConfig,
     getLanceDbPath,
+    getKuzuDbPath,
     getEmbedConfig,
     getRerankConfig,
     getLayerScoreConfig,
@@ -22,6 +23,7 @@ import {
 import type { EmbedConfig } from "../embedding";
 import type { RerankConfig } from "../search/reranker";
 import { startTracker, clearTracker } from "../tracker";
+import { findEntitiesInText, expandEntities } from "../graph/operations";
 
 // ─── 关键词规则路由（替代 LLM 层级判断，0ms 完成） ───
 
@@ -156,10 +158,16 @@ export async function queryMemory(api: any, prompt: string): Promise<string> {
 
         // Step 3: 分层评分 + 阈值过滤 + TopK 截断
         const contextSections: (string | undefined)[] = [];
+        const existingIds = new Set<string>();
 
         for (const { type, layer, results } of allResults) {
             const scoreCfg = getLayerScoreConfig(api, layer);
             const filtered = applyLayerScoring(results, scoreCfg);
+
+            // Collect IDs for dedup
+            for (const r of filtered) {
+                if (r.id) existingIds.add(String(r.id));
+            }
 
             api.logger?.info?.(`[记忆查询] ${layer}: ${results.length}条原始 → ${filtered.length}条过滤后 (阈值${scoreCfg.scoreThreshold})${results.length > 0 ? `, 最高分=${Math.max(...results.map(r => r._score ?? 0)).toFixed(3)}` : ""}`);
 
@@ -173,6 +181,60 @@ export async function queryMemory(api: any, prompt: string): Promise<string> {
                 const layerKey = layer as MemoryLayer | FileLayer;
                 const label = LAYER_DESCRIPTIONS[layerKey];
                 contextSections.push(formatMemoryResults(filtered, label));
+            }
+        }
+
+        // Step 3.5: 图谱关联扩展
+        const kuzuPath = getKuzuDbPath(api);
+        if (kuzuPath) {
+            try {
+                await tracker.track("图谱扩展", async () => {
+                    // Collect entities from initial results
+                    const initialEntities = new Set<string>();
+                    for (const { results } of allResults) {
+                        for (const r of results) {
+                            if (r.subject) initialEntities.add(String(r.subject));
+                        }
+                    }
+
+                    // Find entities mentioned in query text
+                    const queryEntities = await findEntitiesInText(kuzuPath, normalizedPrompt);
+                    for (const e of queryEntities) initialEntities.add(e);
+
+                    if (initialEntities.size === 0) return;
+
+                    // Expand via graph (1-2 hops)
+                    const expansion = await expandEntities(kuzuPath, [...initialEntities], 2);
+
+                    if (expansion.expandedEntities.length === 0) return;
+
+                    // Format graph relationship paths as context
+                    const graphCtx = formatGraphExpansion(expansion.paths);
+                    if (graphCtx) contextSections.push(graphCtx);
+
+                    // Search for memories related to expanded entities
+                    const expandedQuery = expansion.expandedEntities.slice(0, 5).join(" ");
+                    for (const layer of selectedMemoryLayers) {
+                        const tableName = getTableForMemoryLayer(layer);
+                        try {
+                            const expandedResults = await search({
+                                dbPath, tableName, query: expandedQuery,
+                                mode: "hybrid", limit: 3, topK: 5, embedCfg,
+                            });
+                            const scoreCfg = getLayerScoreConfig(api, layer);
+                            const deduped = expandedResults.filter(r => !existingIds.has(String(r.id)));
+                            const scored = applyLayerScoring(deduped, scoreCfg);
+                            if (scored.length > 0) {
+                                const label = `图谱关联 — ${LAYER_DESCRIPTIONS[layer as MemoryLayer]}`;
+                                contextSections.push(formatMemoryResults(scored, label));
+                            }
+                        } catch {}
+                    }
+
+                    return `查询实体${initialEntities.size}个，扩展${expansion.expandedEntities.length}个`;
+                });
+            } catch (err) {
+                api.logger?.warn?.(`图谱扩展失败: ${err}`);
             }
         }
 

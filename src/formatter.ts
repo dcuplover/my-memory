@@ -55,6 +55,15 @@ export function assembleContext(sections: (string | undefined)[]): string {
     ].join("\n");
 }
 
+/**
+ * Format graph expansion paths as a context section.
+ */
+export function formatGraphExpansion(paths: { from: string; relation: string; to: string }[]): string | undefined {
+    if (paths.length === 0) return undefined;
+    const lines = paths.map(p => `- "${p.from}" --${p.relation}--> "${p.to}"`);
+    return ["[关联图谱]", ...paths.length > 8 ? [...lines.slice(0, 8), `...(共 ${paths.length} 条关系)`] : lines].join("\n");
+}
+
 function truncate(text: string, maxLen: number): string {
     if (text.length <= maxLen) return text;
     return text.slice(0, maxLen) + "...";

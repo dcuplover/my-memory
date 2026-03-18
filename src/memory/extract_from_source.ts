@@ -15,6 +15,7 @@ import {
     getEmbedConfig,
     getLlmConfig,
     getDistillLlmConfig,
+    getKuzuDbPath,
     DEFAULT_EMBED_DIMENSIONS,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CHUNK_OVERLAP,
@@ -29,6 +30,7 @@ import {
 } from "../config";
 import { startTracker, clearTracker } from "../tracker";
 import type { AddMemoryResult } from "./add";
+import { extractAndStoreTriples } from "../graph/extract";
 
 // ─── 提取上限 ───
 const MAX_EXTRACT_CHUNK_OVERLAP = 200;
@@ -117,6 +119,19 @@ async function runDecisionPipeline(
             await ensureTable(dbPath, getTableForMemoryLayer(layer), dims);
         }
     });
+
+    // Graph triple extraction
+    const kuzuPath = getKuzuDbPath(api);
+    if (kuzuPath) {
+        await tracker.track("图谱三元组", async () => {
+            try {
+                const gr = await extractAndStoreTriples(kuzuPath, extraction, llmCfg);
+                return `提取${gr.extracted}条，存储${gr.stored}条`;
+            } catch (err) {
+                api.logger?.warn?.(`图谱三元组提取失败: ${err}`);
+            }
+        });
+    }
 
     const attitudesFacts = extraction.attitudes.map((a) => ({
         content: a.content,

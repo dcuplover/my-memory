@@ -16,6 +16,7 @@ import {
     getDistillLlmConfig,
     getRerankConfig,
     getHooksConfig,
+    getKuzuDbPath,
     DEFAULT_RESULT_LIMIT,
     DEFAULT_TOP_K,
     DEFAULT_EMBED_DIMENSIONS,
@@ -27,6 +28,8 @@ import type { RerankConfig } from "./src/search/reranker";
 import { FileWatcherService } from "./src/watcher";
 import { notifyViaHooks } from "./src/hooks/notify";
 import { spawnExtractWorker } from "./src/worker/spawn";
+import { ensureGraphSchema } from "./src/graph/schema";
+import { getGraphStats } from "./src/graph/operations";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
@@ -785,6 +788,14 @@ export default function (api: any) {
         });
     }
 
+    // ─── Graph DB Init ───
+    const kuzuPath = getKuzuDbPath(api);
+    if (kuzuPath) {
+        ensureGraphSchema(kuzuPath).catch((err) => {
+            api.logger?.warn?.(`Failed to initialize Kuzu graph: ${String(err)}`);
+        });
+    }
+
     // ═══════════════════════════════════════════════════════════
     // 5. File Watcher — 监听目录自动导入 + 提取记忆
     // ═══════════════════════════════════════════════════════════
@@ -848,6 +859,25 @@ export default function (api: any) {
             fileWatcher = new FileWatcherService(api);
             fileWatcher.start(currentCfg.watchPaths);
             return { text: `文件监听服务已启动，监听 ${currentCfg.watchPaths.length} 个路径。` };
+        },
+    });
+
+    // ─── /graph_status 命令 ───
+
+    api.registerCommand({
+        name: "graph_status",
+        description: "查看知识图谱状态（实体数、关系数）",
+        async handler(ctx: any) {
+            const gPath = getKuzuDbPath(api);
+            if (!gPath) return { text: "未配置图数据库路径（需先配置 lanceDbPath）。" };
+            try {
+                const stats = await getGraphStats(gPath);
+                return {
+                    text: `## 知识图谱状态\n- 数据库路径: ${gPath}\n- 实体节点: ${stats.entities} 个\n- 关系边: ${stats.relations} 条`,
+                };
+            } catch (err) {
+                return { text: `图谱状态查询失败: ${String(err)}` };
+            }
         },
     });
 
@@ -1015,6 +1045,19 @@ export default function (api: any) {
                 }
             } else {
                 results.push(`⚠️ **LanceDB** — 未配置 lanceDbPath`);
+            }
+
+            // 7. Kuzu Graph DB
+            const testKuzuPath = getKuzuDbPath(api);
+            if (testKuzuPath) {
+                try {
+                    const stats = await getGraphStats(testKuzuPath);
+                    results.push(`✅ **Kuzu Graph** (${testKuzuPath}) — ${stats.entities} 实体, ${stats.relations} 关系`);
+                } catch (err) {
+                    results.push(`❌ **Kuzu Graph** (${testKuzuPath}) — ${String(err)}`);
+                }
+            } else {
+                results.push(`⚠️ **Kuzu Graph** — 未配置`);
             }
 
             return { text: results.join("\n") };

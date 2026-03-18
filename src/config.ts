@@ -125,6 +125,7 @@ export type PluginConfig = {
     layerScoreConfig?: Partial<LayerScoreConfig>;
     layerScoreOverrides?: Record<string, Partial<LayerScoreConfig>>;
     watchPaths?: WatchPathConfig[];
+    kuzuDbPath?: string;
 };
 
 // ─── Watch Path Config ───
@@ -145,6 +146,14 @@ export function getPluginConfig(api: any): PluginConfig {
 
 export function getLanceDbPath(api: any): string | undefined {
     return getPluginConfig(api).lanceDbPath?.trim() || undefined;
+}
+
+export function getKuzuDbPath(api: any): string | undefined {
+    const cfg = getPluginConfig(api);
+    if (cfg.kuzuDbPath?.trim()) return cfg.kuzuDbPath.trim();
+    const lanceDbPath = getLanceDbPath(api);
+    if (lanceDbPath) return lanceDbPath.replace(/\/*$/, "") + "_graph";
+    return undefined;
 }
 
 export function getEmbedConfig(api: any) {

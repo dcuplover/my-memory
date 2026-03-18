@@ -49,6 +49,22 @@ declare var process: {
     env: Record<string, string | undefined>;
 };
 
+declare module "kuzu" {
+    export class Database {
+        constructor(dbPath: string, bufferPoolSize?: number);
+        close(): Promise<void>;
+    }
+    export class Connection {
+        constructor(db: Database);
+        query(cypher: string, params?: Record<string, any>): Promise<QueryResult>;
+        close(): void;
+    }
+    export class QueryResult {
+        getAll(): Promise<Record<string, any>[]>;
+        close(): void;
+    }
+}
+
 declare module "@lancedb/lancedb" {
     export type LanceDbRow = Record<string, unknown>;
 

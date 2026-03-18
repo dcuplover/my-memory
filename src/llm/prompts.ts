@@ -178,6 +178,36 @@ ${newFactsList}
     return [{ role: "system", content: systemPrompt }];
 }
 
+// ─── Triple Extraction Prompt ───
+
+export function buildTripleExtractionMessages(memoryItems: string[]): ChatMessage[] {
+    const itemText = memoryItems.map((item, i) => `${i + 1}. ${item}`).join("\n");
+
+    const systemPrompt = `你是一个知识图谱抽取系统。从已分类的记忆条目中提取实体关系三元组。
+
+规则：
+- 提取实体之间有意义的关系（如 is_a, part_of, used_for, related_to, causes, requires 等）
+- 实体应是具体的名词、概念、技术名、人名、地名等
+- 关系谓词应简洁，使用英文小写（如 is_a, used_for, causes）或简短中文（如 属于, 依赖）
+- 如果记忆涉及"我"的态度或偏好，使用 "用户" 作为主体
+- 不要生成过于笼统或无信息量的三元组
+- 同义实体统一命名（如 "Python" 和 "python" 统一为 "python"）
+- 每条记忆可提取 0~3 个三元组
+
+仅输出 JSON：
+{
+  "triples": [
+    { "subject": "实体A", "predicate": "关系", "object": "实体B" }
+  ]
+}
+如果无法提取有意义的三元组，返回 { "triples": [] }。`;
+
+    return [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: itemText },
+    ];
+}
+
 // ─── Document Summary Prompt ───
 
 export function buildDocumentSummaryMessages(content: string, title?: string): ChatMessage[] {
