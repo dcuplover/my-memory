@@ -66,6 +66,7 @@ function mergeExtractions(results: ExtractionResult[]): ExtractionResult {
         facts: results.flatMap((r) => r.facts),
         knowledge: results.flatMap((r) => r.knowledge),
         preferences: results.flatMap((r) => r.preferences),
+        statements: results.flatMap((r) => r.statements),
     };
 }
 
@@ -125,7 +126,7 @@ async function runDecisionPipeline(
     if (kuzuPath) {
         await tracker.track("图谱三元组", async () => {
             try {
-                const gr = await extractAndStoreTriples(kuzuPath, extraction, llmCfg);
+                const gr = await extractAndStoreTriples(kuzuPath, extraction.statements, llmCfg);
                 return `提取${gr.extracted}条，存储${gr.stored}条`;
             } catch (err) {
                 api.logger?.warn?.(`图谱三元组提取失败: ${err}`);

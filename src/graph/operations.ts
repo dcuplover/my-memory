@@ -3,8 +3,10 @@ import { ensureGraphSchema } from "./schema";
 
 export type Triple = {
     subject: string;
+    subject_type?: string;
     predicate: string;
     object: string;
+    object_type?: string;
 };
 
 export type GraphExpansion = {
@@ -63,8 +65,8 @@ async function addSingleRelation(conn: any, triple: Triple): Promise<void> {
     if (!rel) return;
 
     // Ensure both entities exist
-    await upsertEntity(conn, subj);
-    await upsertEntity(conn, obj);
+    await upsertEntity(conn, subj, triple.subject_type ?? "");
+    await upsertEntity(conn, obj, triple.object_type ?? "");
 
     // Check if same relation already exists
     try {

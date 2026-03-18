@@ -180,24 +180,90 @@ ${newFactsList}
 
 // ─── Triple Extraction Prompt ───
 
-export function buildTripleExtractionMessages(memoryItems: string[]): ChatMessage[] {
-    const itemText = memoryItems.map((item, i) => `${i + 1}. ${item}`).join("\n");
+export function buildTripleExtractionMessages(statements: string[]): ChatMessage[] {
+    const itemText = statements.map((item, i) => `${i + 1}. ${item}`).join("\n");
 
-    const systemPrompt = `你是一个知识图谱抽取系统。从已分类的记忆条目中提取实体关系三元组。
+    const systemPrompt = `你是一个知识图谱抽取系统。从蒸馏后的原子化陈述中提取实体关系三元组。
 
-规则：
-- 提取实体之间有意义的关系（如 is_a, part_of, used_for, related_to, causes, requires 等）
-- 实体应是具体的名词、概念、技术名、人名、地名等
-- 关系谓词应简洁，使用英文小写（如 is_a, used_for, causes）或简短中文（如 属于, 依赖）
-- 如果记忆涉及"我"的态度或偏好，使用 "用户" 作为主体
-- 不要生成过于笼统或无信息量的三元组
-- 同义实体统一命名（如 "Python" 和 "python" 统一为 "python"）
-- 每条记忆可提取 0~3 个三元组
+## 实体要求
 
-仅输出 JSON：
+实体必须属于以下类型之一（entity_type 字段必填）：
+- Person — 人名
+- Software — 软件、库、框架、工具、产品
+- Parameter — 配置参数、环境变量、API 参数
+- Platform — 平台、操作系统、运行环境
+- Concept — 技术概念、设计模式、方法论
+- Organization — 公司、团队、社区
+- Format — 文件格式、协议、标准
+- Language — 编程语言、自然语言
+- Error — 已命名的错误类型或异常类（如 OOM、SegmentFault）
+- Other — 确实不属于以上类型的具名实体
+
+### 实体反例（以下不是实体，不要提取）：
+- ❌ 错误信息原文："mmap for size 8796093022208 failed" — 这是日志文本，不是实体
+- ❌ 带数值的陈述句："maxDBSize 参数默认值为 8TB" — 这是一条事实，需拆为实体 maxDBSize 和关系
+- ❌ 动作描述："设置环境变量"、"重启服务" — 动作不是实体
+- ❌ 过于笼统的词："问题"、"方案"、"配置"、"错误" — 太模糊，缺乏具体指向
+
+### 实体规范化：
+- 同义实体统一命名（如 "Python" 和 "python" → "Python"；"LanceDB" 和 "lancedb" → "LanceDB"）
+- 保留实体的通用名称，不带版本号（除非版本是核心区分信息）
+- 如果涉及"我"的态度或偏好，使用"用户"作为主体
+
+## 关系要求
+
+关系谓词使用英文小写 snake_case。优先使用以下高价值关系类型：
+
+**分类关系**: is_a, part_of, instance_of
+**因果/依赖**: causes, requires, depends_on, triggers
+**解决方案**: solved_by, mitigated_by, configured_with, workaround_for
+**用途/适用**: used_for, applies_to, supports, compatible_with
+**替代/对比**: alternative_to, replaced_by, compared_with
+**属性/配置**: has_default, has_parameter, has_property
+**态度/偏好**: prefers, dislikes, recommends
+
+避免生成无信息量的关系（如 related_to），尽量使用上述具体类型。
+
+## Few-shot 示例
+
+### 输入陈述：
+1. LanceDB 使用 mmap 机制管理磁盘上的向量数据
+2. 当 LanceDB 数据库文件过大时，mmap 会因地址空间不足导致 OOM 崩溃
+3. 在 32 位系统上 mmap 的地址空间上限约为 2-3GB
+4. 可以通过设置 maxDBSize 参数限制 mmap 映射范围来规避 OOM
+
+### 期望输出：
 {
   "triples": [
-    { "subject": "实体A", "predicate": "关系", "object": "实体B" }
+    { "subject": "LanceDB", "subject_type": "Software", "predicate": "uses", "object": "mmap", "object_type": "Concept" },
+    { "subject": "mmap", "subject_type": "Concept", "predicate": "causes", "object": "OOM", "object_type": "Error" },
+    { "subject": "OOM", "subject_type": "Error", "predicate": "solved_by", "object": "maxDBSize", "object_type": "Parameter" },
+    { "subject": "maxDBSize", "subject_type": "Parameter", "predicate": "configured_with", "object": "LanceDB", "object_type": "Software" },
+    { "subject": "mmap", "subject_type": "Concept", "predicate": "has_property", "object": "地址空间上限", "object_type": "Concept" }
+  ]
+}
+
+### 输入陈述：
+1. 用户觉得 TypeScript 的类型系统比 JavaScript 更可靠
+2. Zod 是一个 TypeScript 优先的 schema 验证库
+3. 在需要运行时类型校验的场景中，Zod 优于手动 if-else 校验
+
+### 期望输出：
+{
+  "triples": [
+    { "subject": "用户", "subject_type": "Person", "predicate": "prefers", "object": "TypeScript", "object_type": "Language" },
+    { "subject": "Zod", "subject_type": "Software", "predicate": "is_a", "object": "schema 验证库", "object_type": "Concept" },
+    { "subject": "Zod", "subject_type": "Software", "predicate": "applies_to", "object": "运行时类型校验", "object_type": "Concept" },
+    { "subject": "Zod", "subject_type": "Software", "predicate": "alternative_to", "object": "手动 if-else 校验", "object_type": "Concept" }
+  ]
+}
+
+## 输出格式
+
+每条陈述可提取 0~3 个三元组。仅输出 JSON：
+{
+  "triples": [
+    { "subject": "实体A", "subject_type": "类型", "predicate": "关系", "object": "实体B", "object_type": "类型" }
   ]
 }
 如果无法提取有意义的三元组，返回 { "triples": [] }。`;

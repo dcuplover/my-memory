@@ -31,6 +31,8 @@ export type ExtractionResult = {
     facts: ExtractedFact[];
     knowledge: ExtractedKnowledge[];
     preferences: ExtractedPreference[];
+    /** Step 1 蒸馏产出的原子化陈述列表，供图谱提取等下游使用 */
+    statements: string[];
 };
 
 /**
@@ -56,7 +58,7 @@ export async function extractMemories(
     console.log(`[记忆提取] Step 1 完成: 蒸馏出 ${validStatements.length} 条陈述`, validStatements);
     if (validStatements.length === 0) {
         console.log(`[记忆提取] 蒸馏结果为空，跳过分类`);
-        return { attitudes: [], facts: [], knowledge: [], preferences: [] };
+        return { attitudes: [], facts: [], knowledge: [], preferences: [], statements: [] };
     }
 
     // Step 2: Classification
@@ -73,6 +75,7 @@ export async function extractMemories(
         facts: Array.isArray(result.facts) ? result.facts : [],
         knowledge: Array.isArray(result.knowledge) ? result.knowledge : [],
         preferences: Array.isArray(result.preferences) ? result.preferences : [],
+        statements: validStatements,
     };
     console.log(`[记忆提取] Step 2 完成: 态度${final.attitudes.length} 事实${final.facts.length} 知识${final.knowledge.length} 偏好${final.preferences.length}`);
     return final;
