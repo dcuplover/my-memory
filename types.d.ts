@@ -51,7 +51,7 @@ declare var process: {
 
 declare module "kuzu" {
     export class Database {
-        constructor(dbPath: string, bufferPoolSize?: number);
+        constructor(dbPath: string, bufferPoolSize?: number, maxDBSize?: number);
         close(): Promise<void>;
     }
     export class Connection {
