@@ -1,11 +1,7 @@
-import { getGraphConnection } from "./connection";
-
 const _schemaInitialized = new Set<string>();
 
-export async function ensureGraphSchema(dbPath: string): Promise<void> {
+export async function ensureGraphSchema(dbPath: string, conn: any): Promise<void> {
     if (_schemaInitialized.has(dbPath)) return;
-
-    const conn = await getGraphConnection(dbPath);
 
     // Create Entity node table
     try {

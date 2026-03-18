@@ -30,7 +30,6 @@ import type { RerankConfig } from "./src/search/reranker";
 import { FileWatcherService } from "./src/watcher";
 import { notifyViaHooks } from "./src/hooks/notify";
 import { spawnExtractWorker } from "./src/worker/spawn";
-import { ensureGraphSchema } from "./src/graph/schema";
 import { getGraphStats } from "./src/graph/operations";
 
 /**
@@ -906,14 +905,6 @@ export default function (api: any) {
         const dims = initCfg.embedDimensions ?? DEFAULT_EMBED_DIMENSIONS;
         ensureAllTables(dbPath, dims).catch((err) => {
             api.logger?.warn?.(`Failed to initialize LanceDB tables: ${String(err)}`);
-        });
-    }
-
-    // ─── Graph DB Init ───
-    const kuzuPath = getKuzuDbPath(api);
-    if (kuzuPath) {
-        ensureGraphSchema(kuzuPath).catch((err) => {
-            api.logger?.warn?.(`Failed to initialize Kuzu graph: ${String(err)}`);
         });
     }
 

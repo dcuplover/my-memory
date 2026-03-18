@@ -1,23 +1,20 @@
 import { Database, Connection } from "kuzu";
 
-let _db: InstanceType<typeof Database> | null = null;
-let _conn: InstanceType<typeof Connection> | null = null;
-let _dbPath: string | null = null;
-
-export async function getGraphConnection(dbPath: string): Promise<InstanceType<typeof Connection>> {
-    if (_conn && _dbPath === dbPath) return _conn;
-    await closeGraphConnection();
-    // bufferPoolSize 256MB, enableCompression, readOnly=false, maxDBSize 1GB — 避免 Kuzu 默认 8TB mmap 在树莓派等设备上失败
-    _db = new Database(dbPath, 256 * 1024 * 1024, true, false, 1024 * 1024 * 1024);
-    _conn = new Connection(_db);
-    _dbPath = dbPath;
-    return _conn;
-}
-
-export async function closeGraphConnection(): Promise<void> {
-    if (_conn) { try { _conn.close(); } catch {} }
-    if (_db) { try { await _db.close(); } catch {} }
-    _conn = null;
-    _db = null;
-    _dbPath = null;
+/**
+ * 作用域连接：打开 → 执行回调 → 关闭。
+ * 确保每次操作完成后立即释放文件锁，避免多进程冲突。
+ */
+export async function withGraphConnection<T>(
+    dbPath: string,
+    fn: (conn: InstanceType<typeof Connection>) => Promise<T>,
+): Promise<T> {
+    // bufferPoolSize 256MB, enableCompression, readOnly=false, maxDBSize 1GB
+    const db = new Database(dbPath, 256 * 1024 * 1024, true, false, 1024 * 1024 * 1024);
+    const conn = new Connection(db);
+    try {
+        return await fn(conn);
+    } finally {
+        try { conn.close(); } catch {}
+        try { await db.close(); } catch {}
+    }
 }

@@ -1,4 +1,4 @@
-import { getGraphConnection } from "./connection";
+import { withGraphConnection } from "./connection";
 import { ensureGraphSchema } from "./schema";
 
 export type Triple = {
@@ -91,38 +91,39 @@ async function addSingleRelation(conn: any, triple: Triple): Promise<void> {
  * Store multiple triples in the graph.
  */
 export async function storeTriples(dbPath: string, triples: Triple[]): Promise<number> {
-    await ensureGraphSchema(dbPath);
-    const conn = await getGraphConnection(dbPath);
-    let stored = 0;
-    for (const triple of triples) {
-        try {
-            await addSingleRelation(conn, triple);
-            stored++;
-        } catch (err) {
-            console.warn(`[图谱] 存储三元组失败: ${triple.subject} → ${triple.predicate} → ${triple.object}: ${err}`);
+    return withGraphConnection(dbPath, async (conn) => {
+        await ensureGraphSchema(dbPath, conn);
+        let stored = 0;
+        for (const triple of triples) {
+            try {
+                await addSingleRelation(conn, triple);
+                stored++;
+            } catch (err) {
+                console.warn(`[图谱] 存储三元组失败: ${triple.subject} → ${triple.predicate} → ${triple.object}: ${err}`);
+            }
         }
-    }
-    return stored;
+        return stored;
+    });
 }
 
 /**
  * Find entity names that appear as substrings in the given text.
  */
 export async function findEntitiesInText(dbPath: string, text: string): Promise<string[]> {
-    await ensureGraphSchema(dbPath);
-    const conn = await getGraphConnection(dbPath);
+    return withGraphConnection(dbPath, async (conn) => {
+        await ensureGraphSchema(dbPath, conn);
+        try {
+            const result = await conn.query("MATCH (e:Entity) RETURN e.name AS name");
+            const rows = await result.getAll();
+            const normalizedText = text.toLowerCase();
 
-    try {
-        const result = await conn.query("MATCH (e:Entity) RETURN e.name AS name");
-        const rows = await result.getAll();
-        const normalizedText = text.toLowerCase();
-
-        return rows
-            .map((r: any) => String(r.name ?? ""))
-            .filter((name: string) => name.length >= 2 && normalizedText.includes(name));
-    } catch {
-        return [];
-    }
+            return rows
+                .map((r: any) => String(r.name ?? ""))
+                .filter((name: string) => name.length >= 2 && normalizedText.includes(name));
+        } catch {
+            return [];
+        }
+    });
 }
 
 /**
@@ -134,45 +135,19 @@ export async function expandEntities(
     entityNames: string[],
     maxHops: number = 2,
 ): Promise<GraphExpansion> {
-    await ensureGraphSchema(dbPath);
-    const conn = await getGraphConnection(dbPath);
+    return withGraphConnection(dbPath, async (conn) => {
+        await ensureGraphSchema(dbPath, conn);
 
-    const normalizedNames = entityNames.map(normalizeEntityName).filter(Boolean);
-    if (normalizedNames.length === 0) return { expandedEntities: [], paths: [] };
+        const normalizedNames = entityNames.map(normalizeEntityName).filter(Boolean);
+        if (normalizedNames.length === 0) return { expandedEntities: [], paths: [] };
 
-    const paths: GraphExpansion["paths"] = [];
-    const knownSet = new Set(normalizedNames);
-    const firstHopNew: string[] = [];
+        const paths: GraphExpansion["paths"] = [];
+        const knownSet = new Set(normalizedNames);
+        const firstHopNew: string[] = [];
 
-    // Hop 1
-    try {
-        const nameList = normalizedNames.map(n => `'${escapeCypher(n)}'`).join(",");
-        const result = await conn.query(
-            `MATCH (a:Entity)-[r:RELATES_TO]-(b:Entity)
-             WHERE a.name IN [${nameList}]
-             RETURN a.name AS from_name, r.relation AS relation, b.name AS to_name`
-        );
-        const rows = await result.getAll();
-
-        for (const row of rows) {
-            const fromName = String(row.from_name ?? "");
-            const relation = String(row.relation ?? "");
-            const toName = String(row.to_name ?? "");
-
-            if (toName && !knownSet.has(toName)) {
-                knownSet.add(toName);
-                firstHopNew.push(toName);
-                paths.push({ from: fromName, relation, to: toName });
-            }
-        }
-    } catch {
-        // Graph might be empty
-    }
-
-    // Hop 2
-    if (maxHops >= 2 && firstHopNew.length > 0 && firstHopNew.length <= 20) {
+        // Hop 1
         try {
-            const nameList = firstHopNew.map(n => `'${escapeCypher(n)}'`).join(",");
+            const nameList = normalizedNames.map(n => `'${escapeCypher(n)}'`).join(",");
             const result = await conn.query(
                 `MATCH (a:Entity)-[r:RELATES_TO]-(b:Entity)
                  WHERE a.name IN [${nameList}]
@@ -187,39 +162,66 @@ export async function expandEntities(
 
                 if (toName && !knownSet.has(toName)) {
                     knownSet.add(toName);
+                    firstHopNew.push(toName);
                     paths.push({ from: fromName, relation, to: toName });
                 }
             }
         } catch {
-            // Ignore hop-2 failures
+            // Graph might be empty
         }
-    }
 
-    const expandedEntities = [...knownSet]
-        .filter(e => !normalizedNames.includes(e))
-        .slice(0, 10);
+        // Hop 2
+        if (maxHops >= 2 && firstHopNew.length > 0 && firstHopNew.length <= 20) {
+            try {
+                const nameList = firstHopNew.map(n => `'${escapeCypher(n)}'`).join(",");
+                const result = await conn.query(
+                    `MATCH (a:Entity)-[r:RELATES_TO]-(b:Entity)
+                     WHERE a.name IN [${nameList}]
+                     RETURN a.name AS from_name, r.relation AS relation, b.name AS to_name`
+                );
+                const rows = await result.getAll();
 
-    return { expandedEntities, paths };
+                for (const row of rows) {
+                    const fromName = String(row.from_name ?? "");
+                    const relation = String(row.relation ?? "");
+                    const toName = String(row.to_name ?? "");
+
+                    if (toName && !knownSet.has(toName)) {
+                        knownSet.add(toName);
+                        paths.push({ from: fromName, relation, to: toName });
+                    }
+                }
+            } catch {
+                // Ignore hop-2 failures
+            }
+        }
+
+        const expandedEntities = [...knownSet]
+            .filter(e => !normalizedNames.includes(e))
+            .slice(0, 10);
+
+        return { expandedEntities, paths };
+    });
 }
 
 /**
  * Get graph statistics.
  */
 export async function getGraphStats(dbPath: string): Promise<{ entities: number; relations: number }> {
-    await ensureGraphSchema(dbPath);
-    const conn = await getGraphConnection(dbPath);
+    return withGraphConnection(dbPath, async (conn) => {
+        await ensureGraphSchema(dbPath, conn);
+        try {
+            const entityResult = await conn.query("MATCH (e:Entity) RETURN count(e) AS cnt");
+            const entityRows = await entityResult.getAll();
+            const entities = Number(entityRows[0]?.cnt ?? 0);
 
-    try {
-        const entityResult = await conn.query("MATCH (e:Entity) RETURN count(e) AS cnt");
-        const entityRows = await entityResult.getAll();
-        const entities = Number(entityRows[0]?.cnt ?? 0);
+            const relResult = await conn.query("MATCH ()-[r:RELATES_TO]->() RETURN count(r) AS cnt");
+            const relRows = await relResult.getAll();
+            const relations = Number(relRows[0]?.cnt ?? 0);
 
-        const relResult = await conn.query("MATCH ()-[r:RELATES_TO]->() RETURN count(r) AS cnt");
-        const relRows = await relResult.getAll();
-        const relations = Number(relRows[0]?.cnt ?? 0);
-
-        return { entities, relations };
-    } catch {
-        return { entities: 0, relations: 0 };
-    }
+            return { entities, relations };
+        } catch {
+            return { entities: 0, relations: 0 };
+        }
+    });
 }
