@@ -1,6 +1,7 @@
 import { chatCompletionJson, type LlmConfig } from "../llm/client";
 import { buildTripleExtractionMessages } from "../llm/prompts";
 import { storeTriples, type Triple } from "./operations";
+import { isValidEntity } from "./stopwords";
 
 /**
  * Extract entity relationship triples from distilled statements and store in graph.
@@ -26,6 +27,8 @@ export async function extractAndStoreTriples(
         ? data.triples.filter(
             (t: any) => typeof t?.subject === "string" && typeof t?.predicate === "string" && typeof t?.object === "string"
                 && t.subject.trim() && t.predicate.trim() && t.object.trim()
+                && isValidEntity(t.subject, t.subject_type)
+                && isValidEntity(t.object, t.object_type)
         )
         : [];
 

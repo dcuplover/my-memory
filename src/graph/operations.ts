@@ -1,5 +1,6 @@
 import { withGraphConnection } from "./connection";
 import { ensureGraphSchema } from "./schema";
+import { isStopword } from "./stopwords";
 
 export type Triple = {
     subject: string;
@@ -119,7 +120,7 @@ export async function findEntitiesInText(dbPath: string, text: string): Promise<
 
             return rows
                 .map((r: any) => String(r.name ?? ""))
-                .filter((name: string) => name.length >= 2 && normalizedText.includes(name));
+                .filter((name: string) => name.length >= 2 && normalizedText.includes(name) && !isStopword(name));
         } catch {
             return [];
         }
@@ -138,7 +139,7 @@ export async function expandEntities(
     return withGraphConnection(dbPath, async (conn) => {
         await ensureGraphSchema(dbPath, conn);
 
-        const normalizedNames = entityNames.map(normalizeEntityName).filter(Boolean);
+        const normalizedNames = entityNames.map(normalizeEntityName).filter(n => n && !isStopword(n));
         if (normalizedNames.length === 0) return { expandedEntities: [], paths: [] };
 
         const paths: GraphExpansion["paths"] = [];
@@ -160,7 +161,7 @@ export async function expandEntities(
                 const relation = String(row.relation ?? "");
                 const toName = String(row.to_name ?? "");
 
-                if (toName && !knownSet.has(toName)) {
+                if (toName && !knownSet.has(toName) && !isStopword(toName)) {
                     knownSet.add(toName);
                     firstHopNew.push(toName);
                     paths.push({ from: fromName, relation, to: toName });
@@ -186,7 +187,7 @@ export async function expandEntities(
                     const relation = String(row.relation ?? "");
                     const toName = String(row.to_name ?? "");
 
-                    if (toName && !knownSet.has(toName)) {
+                    if (toName && !knownSet.has(toName) && !isStopword(toName)) {
                         knownSet.add(toName);
                         paths.push({ from: fromName, relation, to: toName });
                     }
