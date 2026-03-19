@@ -33,9 +33,10 @@ export async function withGraphConnection<T>(
             console.warn(`[图谱] DB 锁冲突，${RETRY_BASE_MS * (attempt + 1)}ms 后重试 (${attempt + 1}/${MAX_RETRIES})`);
             await sleep(RETRY_BASE_MS * (attempt + 1));
         } finally {
-            try { conn?.close(); } catch {}
-            // 不调用 db.close()：KùzuDB v0.11.x Node 绑定在 close 时触发 SIGSEGV，
-            // 让 Database 对象由 GC / 进程退出自然回收，避免段错误杀死进程。
+            // KùzuDB v0.11.x Node 绑定的 conn.close() / db.close() 均会触发 SIGSEGV，
+            // 不做显式关闭；变量出作用域后由 GC 回收，worker 进程退出时 OS 兜底释放。
+            conn = null;
+            db = null;
         }
     }
     throw lastError;
