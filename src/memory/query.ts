@@ -25,6 +25,14 @@ import type { RerankConfig } from "../search/reranker";
 import { startTracker, clearTracker } from "../tracker";
 import { findEntitiesInText, expandEntities } from "../graph/operations";
 
+// ─── 闲聊/问候检测（不需要记忆补充的查询直接跳过） ───
+
+const SKIP_QUERY_PATTERN = /^(你好|hi|hello|hey|嗨|哈喽|早上好|晚上好|下午好|good\s*(morning|afternoon|evening)|早安|晚安|谢谢|thanks|thank\s*you|再见|bye|goodbye|ok|okay|好的|嗯|哦|是的|对|没错|没问题|收到|了解|明白|知道了|好吧|行|可以|sure|yes|no|yeah|yep|nope|got\s*it|sounds?\s*good|fine)[\s!！。.？?~～]*$/i;
+
+function shouldSkipQuery(query: string): boolean {
+    return SKIP_QUERY_PATTERN.test(query.trim());
+}
+
 // ─── 关键词规则路由（替代 LLM 层级判断，0ms 完成） ───
 
 const DIARY_KEYWORDS = /日记|日志|diary|journal/i;
@@ -90,6 +98,11 @@ export async function queryMemory(api: any, prompt: string): Promise<string> {
 
     const normalizedPrompt = prompt.trim();
     if (normalizedPrompt.length < DEFAULT_MIN_PROMPT_LENGTH) return "";
+
+    if (shouldSkipQuery(normalizedPrompt)) {
+        api.logger?.info?.("Memory query skipped: casual/greeting query");
+        return "";
+    }
 
     const embedCfg = getEmbedConfig(api) as EmbedConfig | undefined;
     const rerankCfg = getRerankConfig(api) as RerankConfig | undefined;
