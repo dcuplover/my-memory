@@ -226,3 +226,74 @@ export async function getGraphStats(dbPath: string): Promise<{ entities: number;
         }
     });
 }
+
+export type GraphEntity = {
+    name: string;
+    entityType: string;
+    mentionCount: number;
+};
+
+export type GraphRelation = {
+    from: string;
+    relation: string;
+    to: string;
+};
+
+export type GraphContent = {
+    entities: GraphEntity[];
+    relations: GraphRelation[];
+};
+
+/**
+ * List all entities and relations in the graph.
+ * Entities sorted by mention_count desc, relations sorted by from name.
+ */
+export async function listGraphContent(
+    dbPath: string,
+    options?: { entityLimit?: number; relationLimit?: number; filterName?: string },
+): Promise<GraphContent> {
+    const entityLimit = options?.entityLimit ?? 200;
+    const relationLimit = options?.relationLimit ?? 500;
+    const filterName = options?.filterName?.trim().toLowerCase();
+
+    return withGraphConnection(dbPath, async (conn) => {
+        await ensureGraphSchema(dbPath, conn);
+
+        let entities: GraphEntity[] = [];
+        let relations: GraphRelation[] = [];
+
+        // Fetch entities
+        try {
+            const query = filterName
+                ? `MATCH (e:Entity) WHERE e.name CONTAINS '${escapeCypher(filterName)}' RETURN e.name AS name, e.entity_type AS entity_type, e.mention_count AS mention_count ORDER BY e.mention_count DESC LIMIT ${entityLimit}`
+                : `MATCH (e:Entity) RETURN e.name AS name, e.entity_type AS entity_type, e.mention_count AS mention_count ORDER BY e.mention_count DESC LIMIT ${entityLimit}`;
+            const result = await conn.query(query);
+            const rows = await result.getAll();
+            entities = rows.map((r: any) => ({
+                name: String(r.name ?? ""),
+                entityType: String(r.entity_type ?? ""),
+                mentionCount: Number(r.mention_count ?? 0),
+            }));
+        } catch {
+            // Empty graph
+        }
+
+        // Fetch relations
+        try {
+            const query = filterName
+                ? `MATCH (a:Entity)-[r:RELATES_TO]->(b:Entity) WHERE a.name CONTAINS '${escapeCypher(filterName)}' OR b.name CONTAINS '${escapeCypher(filterName)}' RETURN a.name AS from_name, r.relation AS relation, b.name AS to_name LIMIT ${relationLimit}`
+                : `MATCH (a:Entity)-[r:RELATES_TO]->(b:Entity) RETURN a.name AS from_name, r.relation AS relation, b.name AS to_name LIMIT ${relationLimit}`;
+            const result = await conn.query(query);
+            const rows = await result.getAll();
+            relations = rows.map((r: any) => ({
+                from: String(r.from_name ?? ""),
+                relation: String(r.relation ?? ""),
+                to: String(r.to_name ?? ""),
+            }));
+        } catch {
+            // Empty graph
+        }
+
+        return { entities, relations };
+    });
+}

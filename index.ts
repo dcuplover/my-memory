@@ -30,7 +30,7 @@ import type { RerankConfig } from "./src/search/reranker";
 import { FileWatcherService } from "./src/watcher";
 import { notifyViaHooks } from "./src/hooks/notify";
 import { spawnExtractWorker } from "./src/worker/spawn";
-import { getGraphStats } from "./src/graph/operations";
+import { getGraphStats, listGraphContent } from "./src/graph/operations";
 
 /**
  * 从 before_prompt_build 的 event 中提取真正的用户查询文本。
@@ -989,6 +989,54 @@ export default function (api: any) {
                 };
             } catch (err) {
                 return { text: `图谱状态查询失败: ${String(err)}` };
+            }
+        },
+    });
+
+    // ─── /graph_list 命令 ───
+
+    api.registerCommand({
+        name: "graph_list",
+        description: "查看知识图谱全部内容（实体和关系），支持按名称过滤。用法：/graph_list [关键词]",
+        async handler(ctx: any) {
+            const gPath = getKuzuDbPath(api);
+            if (!gPath) return { text: "未配置图数据库路径（需先配置 lanceDbPath）。" };
+            try {
+                const filterName = ctx.text?.trim() || undefined;
+                const content = await listGraphContent(gPath, { filterName });
+
+                if (content.entities.length === 0 && content.relations.length === 0) {
+                    return { text: filterName ? `未找到包含「${filterName}」的图谱内容。` : "知识图谱为空，尚无实体和关系。" };
+                }
+
+                const lines: string[] = [];
+                lines.push(`## 知识图谱内容${filterName ? `（过滤: ${filterName}）` : ""}\n`);
+
+                // Entities table
+                if (content.entities.length > 0) {
+                    lines.push(`### 实体节点（${content.entities.length} 个）\n`);
+                    lines.push("| 实体名 | 类型 | 提及次数 |");
+                    lines.push("|--------|------|----------|");
+                    for (const e of content.entities) {
+                        lines.push(`| ${e.name} | ${e.entityType || "-"} | ${e.mentionCount} |`);
+                    }
+                    lines.push("");
+                }
+
+                // Relations table
+                if (content.relations.length > 0) {
+                    lines.push(`### 关系边（${content.relations.length} 条）\n`);
+                    lines.push("| 主体 | 关系 | 客体 |");
+                    lines.push("|------|------|------|");
+                    for (const r of content.relations) {
+                        lines.push(`| ${r.from} | ${r.relation} | ${r.to} |`);
+                    }
+                    lines.push("");
+                }
+
+                return { text: lines.join("\n") };
+            } catch (err) {
+                return { text: `图谱内容查询失败: ${String(err)}` };
             }
         },
     });
